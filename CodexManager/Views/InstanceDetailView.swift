@@ -46,9 +46,18 @@ struct InstanceDetailView: View {
                     Button {
                         Task { await store.launch(draft) }
                     } label: {
-                        Label("Launch", systemImage: "play.fill")
+                        if isLaunching {
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Launching")
+                            }
+                        } else {
+                            Label("Launch", systemImage: "play.fill")
+                        }
                     }
                     .keyboardShortcut(.return, modifiers: [.command])
+                    .disabled(!canSave || isLaunching)
 
                     Button {
                         store.update(draft)
@@ -56,7 +65,7 @@ struct InstanceDetailView: View {
                         Label("Save", systemImage: "checkmark")
                     }
                     .keyboardShortcut("s", modifiers: [.command])
-                    .disabled(!canSave)
+                    .disabled(!canSave || isLaunching)
 
                     Button {
                         duplicateName = "\(draft.name) Copy"
@@ -130,6 +139,10 @@ struct InstanceDetailView: View {
     private var canSave: Bool {
         !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !draft.codexHome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var isLaunching: Bool {
+        store.isLaunching(draft)
     }
 
     private var nameBinding: Binding<String> {

@@ -71,6 +71,7 @@ struct BundleCloneService {
         try signBundle(at: stagingBundleURL, signingIdentity: signingIdentity)
         try verifyBundle(at: stagingBundleURL)
         try replacePreparedBundle(at: stagingDirectoryURL, for: instance)
+        refreshLaunchServicesRegistration(at: destinationURL)
         shouldCleanStaging = false
 
         return destinationURL
@@ -181,7 +182,7 @@ struct BundleCloneService {
         let sourceURL = URL(fileURLWithPath: NSString(string: iconPath).expandingTildeInPath)
         guard fileManager.fileExists(atPath: sourceURL.path) else { return nil }
 
-        let iconFileName = "codex-manager-instance.icns"
+        let iconFileName = "codex-manager-instance-\(stableHash(iconFingerprint(for: iconPath))).icns"
         let destinationURL = appURL
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Resources", isDirectory: true)
@@ -291,6 +292,15 @@ struct BundleCloneService {
         let modifiedAt = attributes?[.modificationDate] as? Date
         let timestamp = modifiedAt.map { String(Int($0.timeIntervalSince1970)) } ?? "missing"
         return "\(expandedPath)|\(timestamp)"
+    }
+
+    private func stableHash(_ value: String) -> String {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return String(hash, radix: 16)
     }
 
     private func signingIdentity() -> String {
@@ -443,6 +453,12 @@ struct BundleCloneService {
 
             throw BundleCloneError.replaceFailed(instance.managedAppName, error.localizedDescription)
         }
+    }
+
+    private func refreshLaunchServicesRegistration(at appURL: URL) {
+        let lsregisterURL = URL(fileURLWithPath: "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister")
+        try? run(lsregisterURL.path, arguments: ["-f", appURL.path])
+        NSWorkspace.shared.noteFileSystemChanged(appURL.path)
     }
 
     private func run(_ executablePath: String, arguments: [String]) throws {

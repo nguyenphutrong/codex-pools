@@ -6,6 +6,7 @@ final class InstanceStore: ObservableObject {
     @Published private(set) var instances: [CodexInstance] = []
     @Published var selectedInstanceID: CodexInstance.ID?
     @Published var errorMessage: String?
+    @Published private var launchingInstanceIDs: Set<CodexInstance.ID> = []
 
     private let launchService = LaunchService()
     private let fileManager: FileManager
@@ -140,6 +141,12 @@ final class InstanceStore: ObservableObject {
     }
 
     func launch(_ instance: CodexInstance) async {
+        guard !isLaunching(instance) else { return }
+        launchingInstanceIDs.insert(instance.id)
+        defer {
+            launchingInstanceIDs.remove(instance.id)
+        }
+
         do {
             try await launchService.launch(instance: instance)
 
@@ -149,6 +156,10 @@ final class InstanceStore: ObservableObject {
         } catch {
             errorMessage = "Could not launch Codex: \(error.localizedDescription)"
         }
+    }
+
+    func isLaunching(_ instance: CodexInstance) -> Bool {
+        launchingInstanceIDs.contains(instance.id)
     }
 
     private func save() {

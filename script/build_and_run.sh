@@ -45,6 +45,10 @@ cat >"$INFO_PLIST" <<PLIST
 </plist>
 PLIST
 
+xattr -cr "$APP_BUNDLE" >/dev/null 2>&1 || true
+codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
+xattr -cr "$APP_BUNDLE" >/dev/null 2>&1 || true
+
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
 }
