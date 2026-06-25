@@ -140,7 +140,7 @@ final class InstanceStore: ObservableObject {
 
     func launch(_ instance: CodexInstance) async {
         do {
-            try launchService.launch(instance: instance)
+            try await launchService.launch(instance: instance)
 
             var launched = instance
             launched.lastLaunchedAt = Date()

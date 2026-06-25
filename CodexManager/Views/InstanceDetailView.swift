@@ -32,7 +32,7 @@ struct InstanceDetailView: View {
             }
 
             Section("Configuration") {
-                TextField("Name", text: $draft.name)
+                TextField("Name", text: nameBinding)
                 TextField("CODEX_HOME", text: $draft.codexHome)
             }
 
@@ -130,6 +130,22 @@ struct InstanceDetailView: View {
     private var canSave: Bool {
         !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !draft.codexHome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var nameBinding: Binding<String> {
+        Binding(
+            get: { draft.name },
+            set: { newName in
+                let previousDefaultHome = CodexInstance.defaultHomePath(for: draft.name)
+                let shouldUpdateHome = draft.codexHome == previousDefaultHome
+
+                draft.name = newName
+
+                if shouldUpdateHome {
+                    draft.codexHome = CodexInstance.defaultHomePath(for: newName)
+                }
+            }
+        )
     }
 
     private var lastLaunchedText: String {
