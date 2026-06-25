@@ -203,6 +203,94 @@ final class CodexSessionServiceTests: XCTestCase {
         XCTAssertTrue(index.contains(#""rollout_path":"sessions\/2026\/06\/26\/rollout-thread-repair.jsonl""#))
     }
 
+    func testSyncSessionsAcrossIdleInstancesAddsMissingAndUpdatesStaleSessions() throws {
+        let firstHome = try makeTemporaryDirectory()
+        let secondHome = try makeTemporaryDirectory()
+        let thirdHome = try makeTemporaryDirectory()
+        let sharedPath = "sessions/2026/06/26/rollout-shared.jsonl"
+        try writeRollout(
+            at: firstHome.appendingPathComponent(sharedPath),
+            threadID: "shared",
+            title: "Shared New",
+            timestamp: "2026-06-26T05:00:00Z"
+        )
+        try writeRollout(
+            at: secondHome.appendingPathComponent(sharedPath),
+            threadID: "shared",
+            title: "Shared Old",
+            timestamp: "2026-06-25T05:00:00Z"
+        )
+        try writeRollout(
+            at: firstHome.appendingPathComponent("sessions/2026/06/26/rollout-only-first.jsonl"),
+            threadID: "only-first",
+            title: "Only First",
+            timestamp: "2026-06-26T06:00:00Z"
+        )
+
+        let first = CodexInstance(
+            id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            name: "First",
+            codexHome: firstHome.path
+        )
+        let second = CodexInstance(
+            id: UUID(uuidString: "66666666-7777-8888-9999-000000000000")!,
+            name: "Second",
+            codexHome: secondHome.path
+        )
+        let third = CodexInstance(
+            id: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
+            name: "Third",
+            codexHome: thirdHome.path
+        )
+
+        let summary = try CodexSessionService().syncSessionsAcrossIdleInstances(
+            [first, second, third],
+            runningInstanceIDs: []
+        )
+
+        XCTAssertEqual(summary.threadUniverseCount, 2)
+        XCTAssertEqual(summary.mutatedInstanceCount, 2)
+        XCTAssertEqual(summary.addedSessionCount, 3)
+        XCTAssertEqual(summary.updatedSessionCount, 1)
+        XCTAssertEqual(summary.skippedRunningInstanceCount, 0)
+
+        let secondShared = try String(contentsOf: secondHome.appendingPathComponent(sharedPath), encoding: .utf8)
+        XCTAssertTrue(secondShared.contains("Shared New"))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: secondHome.appendingPathComponent("sessions/2026/06/26/rollout-only-first.jsonl").path
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: thirdHome.appendingPathComponent(sharedPath).path
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: thirdHome.appendingPathComponent("sessions/2026/06/26/rollout-only-first.jsonl").path
+        ))
+    }
+
+    func testSyncSessionsAcrossIdleInstancesSkipsRunningInstances() throws {
+        let firstHome = try makeTemporaryDirectory()
+        let secondHome = try makeTemporaryDirectory()
+        try writeRollout(
+            at: firstHome.appendingPathComponent("sessions/2026/06/26/rollout-thread.jsonl"),
+            threadID: "thread",
+            title: "Thread",
+            timestamp: "2026-06-26T05:00:00Z"
+        )
+        let first = CodexInstance(name: "First", codexHome: firstHome.path)
+        let second = CodexInstance(name: "Second", codexHome: secondHome.path)
+
+        let summary = try CodexSessionService().syncSessionsAcrossIdleInstances(
+            [first, second],
+            runningInstanceIDs: [second.id]
+        )
+
+        XCTAssertEqual(summary.skippedRunningInstanceCount, 1)
+        XCTAssertEqual(summary.mutatedInstanceCount, 0)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: secondHome.appendingPathComponent("sessions/2026/06/26/rollout-thread.jsonl").path
+        ))
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("codex-pools-session-tests-\(UUID().uuidString)", isDirectory: true)

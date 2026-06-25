@@ -93,18 +93,13 @@ struct CodexSessionService {
                 continue
             }
 
-            if fileManager.fileExists(atPath: targetURL.path) {
-                let backupRoot = try ensureBackupDirectory(&backupDirectory, targetHomeURL: targetHomeURL)
-                try backupExistingFile(targetURL, rootURL: targetHomeURL, backupDirectory: backupRoot)
-                try fileManager.removeItem(at: targetURL)
-            }
-
-            try fileManager.createDirectory(
-                at: targetURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
+            try copyRollout(
+                session: session,
+                to: targetURL,
+                targetHomeURL: targetHomeURL,
+                backupDirectory: &backupDirectory,
+                shouldBackupExisting: fileManager.fileExists(atPath: targetURL.path)
             )
-            try fileManager.copyItem(at: sourceURL, to: targetURL)
-            restoreModifiedDate(from: sourceURL, to: targetURL)
 
             var copied = session
             copied.instanceID = targetInstance.id
@@ -130,6 +125,102 @@ struct CodexSessionService {
             skippedSessionCount: skippedSessionCount,
             missingSessionCount: missingSessionCount,
             backupDirectory: backupDirectory?.path
+        )
+    }
+
+    func syncSessionsAcrossIdleInstances(
+        _ instances: [CodexInstance],
+        runningInstanceIDs: Set<CodexInstance.ID>
+    ) throws -> CodexSessionSyncSummary {
+        let idleInstances = instances.filter { !runningInstanceIDs.contains($0.id) }
+        let skippedRunningInstanceCount = instances.count - idleInstances.count
+        guard idleInstances.count >= 2 else {
+            return CodexSessionSyncSummary(
+                instanceCount: instances.count,
+                threadUniverseCount: 0,
+                mutatedInstanceCount: 0,
+                addedSessionCount: 0,
+                updatedSessionCount: 0,
+                skippedRunningInstanceCount: skippedRunningInstanceCount,
+                items: []
+            )
+        }
+
+        let sessions = scanSessions(for: idleInstances).sessions
+        let bestByThreadID = bestSessionsByThreadID(sessions)
+        let sessionsByInstanceID = Dictionary(grouping: sessions, by: \.instanceID)
+        var items: [CodexSessionSyncItem] = []
+        var totalAdded = 0
+        var totalUpdated = 0
+
+        for target in idleInstances {
+            let targetSessions = bestSessionsByThreadID(sessionsByInstanceID[target.id] ?? [])
+            var added = 0
+            var updated = 0
+            var syncedSessions: [CodexSessionThread] = []
+            var backupDirectory: URL?
+            let targetHomeURL = codexHomeURL(for: target)
+
+            for threadID in bestByThreadID.keys.sorted() {
+                guard let best = bestByThreadID[threadID],
+                      best.instanceID != target.id
+                else {
+                    continue
+                }
+
+                if let existing = targetSessions[threadID] {
+                    guard isSession(best, fresherThan: existing) else { continue }
+                    let targetURL = targetHomeURL.appendingPathComponent(existing.relativeRolloutPath)
+                    try copyRollout(
+                        session: best,
+                        to: targetURL,
+                        targetHomeURL: targetHomeURL,
+                        backupDirectory: &backupDirectory,
+                        shouldBackupExisting: true
+                    )
+                    updated += 1
+                    syncedSessions.append(retargeted(best, to: target, targetURL: targetURL))
+                } else {
+                    let targetURL = targetHomeURL.appendingPathComponent(best.relativeRolloutPath)
+                    try copyRollout(
+                        session: best,
+                        to: targetURL,
+                        targetHomeURL: targetHomeURL,
+                        backupDirectory: &backupDirectory,
+                        shouldBackupExisting: fileManager.fileExists(atPath: targetURL.path)
+                    )
+                    added += 1
+                    syncedSessions.append(retargeted(best, to: target, targetURL: targetURL))
+                }
+            }
+
+            if added > 0 || updated > 0 {
+                let repairSummary = try repairSessionIndex(
+                    for: target,
+                    preferredSessions: syncedSessions,
+                    existingBackupDirectory: backupDirectory
+                )
+                backupDirectory = repairSummary.backupDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+                totalAdded += added
+                totalUpdated += updated
+                items.append(CodexSessionSyncItem(
+                    instanceID: target.id,
+                    instanceName: target.managedAppName,
+                    addedSessionCount: added,
+                    updatedSessionCount: updated,
+                    backupDirectory: backupDirectory?.path
+                ))
+            }
+        }
+
+        return CodexSessionSyncSummary(
+            instanceCount: instances.count,
+            threadUniverseCount: bestByThreadID.count,
+            mutatedInstanceCount: items.count,
+            addedSessionCount: totalAdded,
+            updatedSessionCount: totalUpdated,
+            skippedRunningInstanceCount: skippedRunningInstanceCount,
+            items: items
         )
     }
 
@@ -368,6 +459,75 @@ struct CodexSessionService {
         let filePath = fileURL.standardizedFileURL.path
         guard filePath.hasPrefix(rootPath + "/") else { return fileURL.lastPathComponent }
         return String(filePath.dropFirst(rootPath.count + 1))
+    }
+
+    private func bestSessionsByThreadID(_ sessions: [CodexSessionThread]) -> [String: CodexSessionThread] {
+        sessions.reduce(into: [:]) { result, session in
+            guard let existing = result[session.threadID] else {
+                result[session.threadID] = session
+                return
+            }
+            if isSession(session, fresherThan: existing) {
+                result[session.threadID] = session
+            }
+        }
+    }
+
+    private func isSession(_ candidate: CodexSessionThread, fresherThan existing: CodexSessionThread) -> Bool {
+        switch (candidate.updatedAt, existing.updatedAt) {
+        case let (candidateDate?, existingDate?) where candidateDate != existingDate:
+            return candidateDate > existingDate
+        case (_?, nil):
+            return true
+        case (nil, _?):
+            return false
+        default:
+            if candidate.byteCount != existing.byteCount {
+                return candidate.byteCount > existing.byteCount
+            }
+            return candidate.lineCount > existing.lineCount
+        }
+    }
+
+    private func retargeted(
+        _ session: CodexSessionThread,
+        to target: CodexInstance,
+        targetURL: URL
+    ) -> CodexSessionThread {
+        var retargeted = session
+        let targetHomeURL = codexHomeURL(for: target)
+        retargeted.id = "\(target.id.uuidString):\(session.threadID)"
+        retargeted.instanceID = target.id
+        retargeted.instanceName = target.managedAppName
+        retargeted.codexHome = targetHomeURL.path
+        retargeted.rolloutPath = targetURL.path
+        retargeted.relativeRolloutPath = relativePath(from: targetHomeURL, to: targetURL)
+        return retargeted
+    }
+
+    private func copyRollout(
+        session: CodexSessionThread,
+        to targetURL: URL,
+        targetHomeURL: URL,
+        backupDirectory: inout URL?,
+        shouldBackupExisting: Bool
+    ) throws {
+        let sourceURL = URL(fileURLWithPath: session.rolloutPath)
+        if shouldBackupExisting, fileManager.fileExists(atPath: targetURL.path) {
+            let backupRoot = try ensureBackupDirectory(&backupDirectory, targetHomeURL: targetHomeURL)
+            try backupExistingFile(targetURL, rootURL: targetHomeURL, backupDirectory: backupRoot)
+            try fileManager.removeItem(at: targetURL)
+        }
+
+        try fileManager.createDirectory(
+            at: targetURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        if fileManager.fileExists(atPath: targetURL.path) {
+            try fileManager.removeItem(at: targetURL)
+        }
+        try fileManager.copyItem(at: sourceURL, to: targetURL)
+        restoreModifiedDate(from: sourceURL, to: targetURL)
     }
 
     private func ensureBackupDirectory(_ backupDirectory: inout URL?, targetHomeURL: URL) throws -> URL {
