@@ -3,12 +3,19 @@ import Foundation
 
 @MainActor
 final class InstanceStore: ObservableObject {
+    enum ImportMode {
+        case merge
+        case replace
+    }
+
     @Published private(set) var instances: [CodexInstance] = []
     @Published var selectedInstanceID: CodexInstance.ID?
     @Published var errorMessage: String?
+    @Published var pendingImportedInstances: [CodexInstance]?
     @Published private var launchingInstanceIDs: Set<CodexInstance.ID> = []
 
     private let exportService = ExportService()
+    private let importService = ImportService()
     private let launchService = LaunchService()
     private let fileManager: FileManager
     private let configURL: URL
@@ -171,6 +178,33 @@ final class InstanceStore: ObservableObject {
         }
     }
 
+    func selectConfigurationForImport() {
+        do {
+            pendingImportedInstances = try importService.selectInstances()
+        } catch {
+            errorMessage = "Could not import instances: \(error.localizedDescription)"
+        }
+    }
+
+    func importPendingInstances(mode: ImportMode) {
+        guard let importedInstances = pendingImportedInstances else { return }
+
+        switch mode {
+        case .merge:
+            merge(importedInstances)
+        case .replace:
+            instances = importedInstances
+        }
+
+        selectedInstanceID = importedInstances.first?.id ?? instances.first?.id
+        pendingImportedInstances = nil
+        save()
+    }
+
+    func cancelPendingImport() {
+        pendingImportedInstances = nil
+    }
+
     private func save() {
         do {
             try fileManager.createDirectory(
@@ -202,5 +236,19 @@ final class InstanceStore: ObservableObject {
             index += 1
         }
         return "\(prefix) \(index)"
+    }
+
+    private func merge(_ importedInstances: [CodexInstance]) {
+        var mergedInstances = instances
+
+        for imported in importedInstances {
+            if let index = mergedInstances.firstIndex(where: { $0.id == imported.id }) {
+                mergedInstances[index] = imported
+            } else {
+                mergedInstances.append(imported)
+            }
+        }
+
+        instances = mergedInstances
     }
 }
