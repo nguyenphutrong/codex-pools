@@ -41,6 +41,10 @@ struct InstanceDetailView: View {
                 EnvVarEditorView(variables: $draft.extraEnvVars)
             }
 
+            Section("Launch Arguments") {
+                LaunchArgsEditorView(arguments: $draft.launchArgs)
+            }
+
             Section("Activity") {
                 LabeledContent("Created", value: draft.createdAt.formatted(date: .abbreviated, time: .shortened))
                 LabeledContent("Last launched", value: lastLaunchedText)
@@ -150,7 +154,8 @@ struct InstanceDetailView: View {
     private var canSave: Bool {
         !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !draft.codexHome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            draft.extraEnvVars.keys.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            draft.extraEnvVars.keys.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } &&
+            draft.launchArgs.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
     private var isLaunching: Bool {
