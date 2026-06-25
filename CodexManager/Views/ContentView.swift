@@ -21,12 +21,58 @@ struct ContentView: View {
         } message: {
             Text(store.errorMessage ?? "")
         }
+        .confirmationDialog(
+            "Import Configuration",
+            isPresented: importPromptBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Merge with Existing Instances") {
+                store.importPendingInstances(mode: .merge)
+            }
+
+            Button("Replace Existing Instances", role: .destructive) {
+                store.importPendingInstances(mode: .replace)
+            }
+
+            Button("Cancel", role: .cancel) {
+                store.cancelPendingImport()
+            }
+        } message: {
+            Text("Choose whether to merge the selected configuration into the current list or replace the current list.")
+        }
+        .toolbar {
+            ToolbarItemGroup {
+                Button {
+                    store.selectConfigurationForImport()
+                } label: {
+                    Label("Import", systemImage: "square.and.arrow.down")
+                }
+
+                Button {
+                    store.exportInstances()
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .disabled(store.instances.isEmpty)
+            }
+        }
+        .sheet(isPresented: $store.isShowingTemplatePicker) {
+            TemplatePickerView()
+                .environmentObject(store)
+        }
     }
 
     private var errorBinding: Binding<Bool> {
         Binding(
             get: { store.errorMessage != nil },
             set: { if !$0 { store.errorMessage = nil } }
+        )
+    }
+
+    private var importPromptBinding: Binding<Bool> {
+        Binding(
+            get: { store.pendingImportedInstances != nil },
+            set: { if !$0 { store.cancelPendingImport() } }
         )
     }
 }

@@ -82,6 +82,31 @@ struct BundleCloneService {
         return destinationURL
     }
 
+    func bundleStatus(for instance: CodexInstance) -> CodexInstance.BundleStatus {
+        guard fileManager.fileExists(atPath: sourceAppURL.path) else {
+            return .missingSourceApp
+        }
+
+        do {
+            try preflightSourceApp()
+
+            let sourceFingerprint = try sourceFingerprint()
+            let iconFingerprint = iconFingerprint(for: instance.iconPath)
+            let signingIdentity = signingIdentity()
+            let destinationURL = bundleURL(for: instance)
+
+            return needsRebuild(
+                instance: instance,
+                destinationURL: destinationURL,
+                sourceFingerprint: sourceFingerprint,
+                iconFingerprint: iconFingerprint,
+                signingIdentity: signingIdentity
+            ) ? .needsRebuild : .ready
+        } catch {
+            return .needsRebuild
+        }
+    }
+
     func removeBundle(for instance: CodexInstance) throws {
         try removeItemIfPresent(at: instanceDirectoryURL(for: instance))
     }

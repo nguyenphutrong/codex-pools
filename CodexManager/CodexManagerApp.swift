@@ -23,7 +23,7 @@ struct CodexPoolsApp: App {
         .commands {
             CommandMenu("Instance") {
                 Button("New Instance") {
-                    store.createInstance()
+                    store.showTemplatePicker()
                 }
                 .keyboardShortcut("n", modifiers: [.command])
 
@@ -32,7 +32,30 @@ struct CodexPoolsApp: App {
                         Task { await store.launch(selected) }
                     }
                     .keyboardShortcut(.return, modifiers: [.command])
+
+                    Button("Quit Instance") {
+                        store.quit(selected)
+                    }
+                    .disabled(!store.isRunning(selected))
+
+                    Button("Restart Instance") {
+                        Task { await store.restart(selected) }
+                    }
+                    .disabled(!store.isRunning(selected))
                 }
+            }
+
+            CommandMenu("Configuration") {
+                Button("Import Configuration") {
+                    store.selectConfigurationForImport()
+                }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+
+                Button("Export Configuration") {
+                    store.exportInstances()
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(store.instances.isEmpty)
             }
         }
     }

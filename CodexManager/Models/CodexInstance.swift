@@ -1,10 +1,17 @@
 import Foundation
 
 struct CodexInstance: Identifiable, Codable, Equatable {
+    enum BundleStatus: String, Codable, Equatable {
+        case ready
+        case needsRebuild
+        case missingSourceApp
+    }
+
     var id: UUID
     var name: String
     var iconPath: String?
     var codexHome: String
+    var bundleStatus: BundleStatus
     var extraEnvVars: [String: String]
     var launchArgs: [String]
     var createdAt: Date
@@ -15,6 +22,7 @@ struct CodexInstance: Identifiable, Codable, Equatable {
         name: String,
         iconPath: String? = nil,
         codexHome: String,
+        bundleStatus: BundleStatus = .missingSourceApp,
         extraEnvVars: [String: String] = [:],
         launchArgs: [String] = [],
         createdAt: Date = Date(),
@@ -24,6 +32,7 @@ struct CodexInstance: Identifiable, Codable, Equatable {
         self.name = name
         self.iconPath = iconPath
         self.codexHome = codexHome
+        self.bundleStatus = bundleStatus
         self.extraEnvVars = extraEnvVars
         self.launchArgs = launchArgs
         self.createdAt = createdAt
@@ -37,6 +46,7 @@ extension CodexInstance {
         case name
         case iconPath
         case codexHome
+        case bundleStatus
         case extraEnvVars
         case launchArgs
         case createdAt
@@ -49,6 +59,7 @@ extension CodexInstance {
         name = try container.decode(String.self, forKey: .name)
         iconPath = try container.decodeIfPresent(String.self, forKey: .iconPath)
         codexHome = try container.decode(String.self, forKey: .codexHome)
+        bundleStatus = try container.decodeIfPresent(BundleStatus.self, forKey: .bundleStatus) ?? .missingSourceApp
         extraEnvVars = try container.decodeIfPresent([String: String].self, forKey: .extraEnvVars) ?? [:]
         launchArgs = try container.decodeIfPresent([String].self, forKey: .launchArgs) ?? []
         createdAt = try container.decode(Date.self, forKey: .createdAt)
@@ -61,6 +72,7 @@ extension CodexInstance {
         try container.encode(name, forKey: .name)
         try container.encodeIfPresent(iconPath, forKey: .iconPath)
         try container.encode(codexHome, forKey: .codexHome)
+        try container.encode(bundleStatus, forKey: .bundleStatus)
         try container.encode(extraEnvVars, forKey: .extraEnvVars)
         try container.encode(launchArgs, forKey: .launchArgs)
         try container.encode(createdAt, forKey: .createdAt)

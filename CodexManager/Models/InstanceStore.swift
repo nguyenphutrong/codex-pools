@@ -1,17 +1,31 @@
+import AppKit
 import Combine
 import Foundation
 
 @MainActor
 final class InstanceStore: ObservableObject {
+    enum ImportMode {
+        case merge
+        case replace
+    }
+
     @Published private(set) var instances: [CodexInstance] = []
+    @Published private(set) var templates: [CodexTemplate] = []
     @Published var selectedInstanceID: CodexInstance.ID?
     @Published var errorMessage: String?
+    @Published var isShowingTemplatePicker = false
+    @Published var pendingImportedInstances: [CodexInstance]?
+    @Published private(set) var runningInstanceIDs: Set<CodexInstance.ID> = []
     @Published private var launchingInstanceIDs: Set<CodexInstance.ID> = []
 
+    private let exportService = ExportService()
+    private let importService = ImportService()
     private let launchService = LaunchService()
     private let fileManager: FileManager
     private let configURL: URL
+    private let templatesURL: URL
     private let iconDirectoryURL: URL
+    private var runningAppsCancellable: AnyCancellable?
 
     var selectedInstance: CodexInstance? {
         guard let selectedInstanceID else { return instances.first }
@@ -26,6 +40,10 @@ final class InstanceStore: ObservableObject {
             .appendingPathComponent(".config")
             .appendingPathComponent("codex-pools")
             .appendingPathComponent("instances.json")
+        self.templatesURL = home
+            .appendingPathComponent(".config")
+            .appendingPathComponent("codex-pools")
+            .appendingPathComponent("templates.json")
 
         self.iconDirectoryURL = home
             .appendingPathComponent("Library")
@@ -34,6 +52,9 @@ final class InstanceStore: ObservableObject {
             .appendingPathComponent("Icons")
 
         load()
+        loadTemplates()
+        refreshBundleStatuses()
+        startRunningAppsObserver()
     }
 
     func load() {
@@ -45,6 +66,7 @@ final class InstanceStore: ObservableObject {
 
             let data = try Data(contentsOf: configURL)
             instances = try JSONDecoder.instanceDecoder.decode([CodexInstance].self, from: data)
+            refreshRunningInstances()
 
             if selectedInstanceID == nil {
                 selectedInstanceID = instances.first?.id
@@ -57,19 +79,64 @@ final class InstanceStore: ObservableObject {
 
     func createInstance() {
         let baseName = nextAvailableName(prefix: "Codex")
-        let instance = CodexInstance(
+        var instance = CodexInstance(
             name: baseName,
             codexHome: CodexInstance.defaultHomePath(for: baseName)
         )
+        instance.bundleStatus = launchService.bundleStatus(for: instance)
 
         instances.append(instance)
         selectedInstanceID = instance.id
+        isShowingTemplatePicker = false
         save()
+    }
+
+    func createInstance(from template: CodexTemplate) {
+        let baseName = nextAvailableName(prefix: template.name)
+        var instance = CodexInstance(
+            name: baseName,
+            codexHome: nextAvailableTemplateHomePath(for: template),
+            extraEnvVars: template.extraEnvVars,
+            launchArgs: template.launchFlags
+        )
+        instance.bundleStatus = launchService.bundleStatus(for: instance)
+
+        instances.append(instance)
+        selectedInstanceID = instance.id
+        isShowingTemplatePicker = false
+        save()
+    }
+
+    func showTemplatePicker() {
+        isShowingTemplatePicker = true
+    }
+
+    func loadTemplates() {
+        do {
+            guard fileManager.fileExists(atPath: templatesURL.path) else {
+                templates = CodexTemplate.builtInTemplates
+                saveTemplates()
+                return
+            }
+
+            let data = try Data(contentsOf: templatesURL)
+            let decodedTemplates = try JSONDecoder.instanceDecoder.decode([CodexTemplate].self, from: data)
+            templates = decodedTemplates.isEmpty ? CodexTemplate.builtInTemplates : decodedTemplates
+
+            if decodedTemplates.isEmpty {
+                saveTemplates()
+            }
+        } catch {
+            errorMessage = "Could not load templates: \(error.localizedDescription)"
+            templates = CodexTemplate.builtInTemplates
+        }
     }
 
     func update(_ instance: CodexInstance) {
         guard let index = instances.firstIndex(where: { $0.id == instance.id }) else { return }
-        instances[index] = instance
+        var updated = instance
+        updated.bundleStatus = launchService.bundleStatus(for: updated)
+        instances[index] = updated
         selectedInstanceID = instance.id
         save()
     }
@@ -100,11 +167,12 @@ final class InstanceStore: ObservableObject {
                 withIntermediateDirectories: true
             )
 
-            let clone = CodexInstance(
+            var clone = CodexInstance(
                 name: trimmedName,
                 iconPath: instance.iconPath,
                 codexHome: newHome
             )
+            clone.bundleStatus = launchService.bundleStatus(for: clone)
             instances.append(clone)
             selectedInstanceID = clone.id
             save()
@@ -152,14 +220,121 @@ final class InstanceStore: ObservableObject {
 
             var launched = instance
             launched.lastLaunchedAt = Date()
+            launched.bundleStatus = launchService.bundleStatus(for: launched)
             update(launched)
         } catch {
             errorMessage = "Could not launch Codex: \(error.localizedDescription)"
+            refreshBundleStatuses()
         }
+    }
+
+    func quit(_ instance: CodexInstance) {
+        do {
+            try launchService.quit(instance: instance)
+            refreshRunningInstances()
+        } catch {
+            errorMessage = "Could not quit Codex: \(error.localizedDescription)"
+        }
+    }
+
+    func restart(_ instance: CodexInstance) async {
+        guard !isLaunching(instance) else { return }
+
+        quit(instance)
+        await waitUntilNotRunning(instance)
+        guard !isRunning(instance) else { return }
+        await launch(instance)
     }
 
     func isLaunching(_ instance: CodexInstance) -> Bool {
         launchingInstanceIDs.contains(instance.id)
+    }
+
+    func exportInstances() {
+        do {
+            try exportService.export(instances: instances)
+        } catch {
+            errorMessage = "Could not export instances: \(error.localizedDescription)"
+        }
+    }
+
+    func selectConfigurationForImport() {
+        do {
+            pendingImportedInstances = try importService.selectInstances()
+        } catch {
+            errorMessage = "Could not import instances: \(error.localizedDescription)"
+        }
+    }
+
+    func importPendingInstances(mode: ImportMode) {
+        guard let importedInstances = pendingImportedInstances else { return }
+
+        switch mode {
+        case .merge:
+            merge(importedInstances)
+        case .replace:
+            instances = importedInstances
+        }
+
+        selectedInstanceID = importedInstances.first?.id ?? instances.first?.id
+        pendingImportedInstances = nil
+        save()
+    }
+
+    func cancelPendingImport() {
+        pendingImportedInstances = nil
+    }
+
+    func isRunning(_ instance: CodexInstance) -> Bool {
+        runningInstanceIDs.contains(instance.id)
+    }
+
+    private func startRunningAppsObserver() {
+        refreshRunningInstances()
+        runningAppsCancellable = Timer.publish(every: 2, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                self?.refreshRunningInstances()
+            }
+    }
+
+    private func refreshRunningInstances() {
+        let runningBundleIdentifiers = Set(
+            NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
+        )
+        runningInstanceIDs = Set(
+            instances
+                .filter { runningBundleIdentifiers.contains($0.managedBundleIdentifier) }
+                .map(\.id)
+        )
+    }
+
+    private func refreshBundleStatuses() {
+        var didChange = false
+        instances = instances.map { instance in
+            var updated = instance
+            let status = launchService.bundleStatus(for: updated)
+            if updated.bundleStatus != status {
+                updated.bundleStatus = status
+                didChange = true
+            }
+            return updated
+        }
+
+        if didChange {
+            save()
+        }
+    }
+
+    private func waitUntilNotRunning(_ instance: CodexInstance) async {
+        for _ in 0..<20 {
+            refreshRunningInstances()
+            if !isRunning(instance) {
+                return
+            }
+
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
     }
 
     private func save() {
@@ -173,6 +348,20 @@ final class InstanceStore: ObservableObject {
             try data.write(to: configURL, options: .atomic)
         } catch {
             errorMessage = "Could not save instances: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveTemplates() {
+        do {
+            try fileManager.createDirectory(
+                at: templatesURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+
+            let data = try JSONEncoder.instanceEncoder.encode(templates)
+            try data.write(to: templatesURL, options: .atomic)
+        } catch {
+            errorMessage = "Could not save templates: \(error.localizedDescription)"
         }
     }
 
@@ -194,21 +383,36 @@ final class InstanceStore: ObservableObject {
         }
         return "\(prefix) \(index)"
     }
-}
 
-private extension JSONDecoder {
-    static var instanceDecoder: JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
+    private func nextAvailableTemplateHomePath(for template: CodexTemplate) -> String {
+        let home = fileManager.homeDirectoryForCurrentUser
+        let codexDirectory = home.appendingPathComponent(".codex")
+        let basePath = codexDirectory.appendingPathComponent(template.safeHomePathSuffix).path
+        let existingHomes = Set(instances.map(\.codexHome))
+
+        if !existingHomes.contains(basePath) {
+            return basePath
+        }
+
+        var index = 2
+        while existingHomes.contains("\(basePath)-\(index)") {
+            index += 1
+        }
+
+        return "\(basePath)-\(index)"
     }
-}
 
-private extension JSONEncoder {
-    static var instanceEncoder: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
+    private func merge(_ importedInstances: [CodexInstance]) {
+        var mergedInstances = instances
+
+        for imported in importedInstances {
+            if let index = mergedInstances.firstIndex(where: { $0.id == imported.id }) {
+                mergedInstances[index] = imported
+            } else {
+                mergedInstances.append(imported)
+            }
+        }
+
+        instances = mergedInstances
     }
 }

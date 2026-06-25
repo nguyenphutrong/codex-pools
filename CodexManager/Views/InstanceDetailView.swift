@@ -26,10 +26,27 @@ struct InstanceDetailView: View {
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                        HStack(spacing: 8) {
+                            if isRunning {
+                                InstanceStateBadge(title: "Running", systemImage: "circle.fill", tint: .green)
+                            }
+                            BundleStatusBadge(status: draft.bundleStatus)
+                        }
                     }
                 }
                 .padding(12)
                 .liquidGlassPanel()
+            }
+
+            if shouldShowRebuildWarning {
+                Section {
+                    Label(
+                        "\(draft.managedAppName) is running and its app bundle needs to be rebuilt. Quit it before launching again so Codex Pools can prepare the updated bundle.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                    .font(.callout)
+                }
             }
 
             Section("Configuration") {
@@ -68,6 +85,22 @@ struct InstanceDetailView: View {
                     .liquidGlassButtonStyle(.prominent)
                     .keyboardShortcut(.return, modifiers: [.command])
                     .disabled(!canSave || isLaunching)
+
+                    Button {
+                        store.quit(draft)
+                    } label: {
+                        Label("Quit", systemImage: "stop.fill")
+                    }
+                    .liquidGlassButtonStyle()
+                    .disabled(!isRunning || isLaunching)
+
+                    Button {
+                        Task { await store.restart(draft) }
+                    } label: {
+                        Label("Restart", systemImage: "arrow.clockwise")
+                    }
+                    .liquidGlassButtonStyle()
+                    .disabled(!isRunning || !canSave || isLaunching)
 
                     Button {
                         store.update(draft)
@@ -160,6 +193,14 @@ struct InstanceDetailView: View {
 
     private var isLaunching: Bool {
         store.isLaunching(draft)
+    }
+
+    private var isRunning: Bool {
+        store.isRunning(draft)
+    }
+
+    private var shouldShowRebuildWarning: Bool {
+        isRunning && draft.bundleStatus == .needsRebuild
     }
 
     private var nameBinding: Binding<String> {
