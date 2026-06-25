@@ -1,0 +1,202 @@
+import AppKit
+import Foundation
+
+@MainActor
+final class InstanceStore: ObservableObject {
+    @Published private(set) var instances: [CodexInstance] = []
+    @Published var selectedInstanceID: CodexInstance.ID?
+    @Published var errorMessage: String?
+
+    private let launchService = LaunchService()
+    private let fileManager: FileManager
+    private let configURL: URL
+    private let iconDirectoryURL: URL
+
+    var selectedInstance: CodexInstance? {
+        guard let selectedInstanceID else { return instances.first }
+        return instances.first { $0.id == selectedInstanceID }
+    }
+
+    init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+
+        let home = fileManager.homeDirectoryForCurrentUser
+        self.configURL = home
+            .appendingPathComponent(".config")
+            .appendingPathComponent("codex-manager")
+            .appendingPathComponent("instances.json")
+
+        self.iconDirectoryURL = home
+            .appendingPathComponent("Library")
+            .appendingPathComponent("Application Support")
+            .appendingPathComponent("Codex Instance Manager")
+            .appendingPathComponent("Icons")
+
+        load()
+    }
+
+    func load() {
+        do {
+            guard fileManager.fileExists(atPath: configURL.path) else {
+                instances = []
+                return
+            }
+
+            let data = try Data(contentsOf: configURL)
+            instances = try JSONDecoder.instanceDecoder.decode([CodexInstance].self, from: data)
+
+            if selectedInstanceID == nil {
+                selectedInstanceID = instances.first?.id
+            }
+        } catch {
+            errorMessage = "Could not load instances: \(error.localizedDescription)"
+            instances = []
+        }
+    }
+
+    func createInstance() {
+        let baseName = nextAvailableName(prefix: "Codex")
+        let instance = CodexInstance(
+            name: baseName,
+            codexHome: CodexInstance.defaultHomePath(for: baseName)
+        )
+
+        instances.append(instance)
+        selectedInstanceID = instance.id
+        save()
+    }
+
+    func update(_ instance: CodexInstance) {
+        guard let index = instances.firstIndex(where: { $0.id == instance.id }) else { return }
+        instances[index] = instance
+        selectedInstanceID = instance.id
+        save()
+    }
+
+    func delete(_ instance: CodexInstance, deleteHomeDirectory: Bool) {
+        do {
+            if deleteHomeDirectory {
+                try removeHomeDirectoryIfPresent(instance.codexHome)
+            }
+
+            instances.removeAll { $0.id == instance.id }
+            selectedInstanceID = instances.first?.id
+            save()
+        } catch {
+            errorMessage = "Could not delete instance: \(error.localizedDescription)"
+        }
+    }
+
+    func duplicate(_ instance: CodexInstance, newName: String) {
+        let trimmedName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+
+        let newHome = CodexInstance.defaultHomePath(for: trimmedName)
+        do {
+            try fileManager.createDirectory(
+                at: URL(fileURLWithPath: newHome, isDirectory: true),
+                withIntermediateDirectories: true
+            )
+
+            let clone = CodexInstance(
+                name: trimmedName,
+                iconPath: instance.iconPath,
+                codexHome: newHome
+            )
+            instances.append(clone)
+            selectedInstanceID = clone.id
+            save()
+        } catch {
+            errorMessage = "Could not duplicate instance: \(error.localizedDescription)"
+        }
+    }
+
+    func copyIcon(from sourceURL: URL) -> String? {
+        do {
+            try fileManager.createDirectory(at: iconDirectoryURL, withIntermediateDirectories: true)
+
+            let ext = sourceURL.pathExtension.isEmpty ? "png" : sourceURL.pathExtension
+            let destination = iconDirectoryURL
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(ext)
+
+            if fileManager.fileExists(atPath: destination.path) {
+                try fileManager.removeItem(at: destination)
+            }
+
+            if sourceURL.startAccessingSecurityScopedResource() {
+                defer { sourceURL.stopAccessingSecurityScopedResource() }
+                try fileManager.copyItem(at: sourceURL, to: destination)
+            } else {
+                try fileManager.copyItem(at: sourceURL, to: destination)
+            }
+
+            return destination.path
+        } catch {
+            errorMessage = "Could not copy icon: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    func launch(_ instance: CodexInstance) async {
+        do {
+            try launchService.launch(instance: instance)
+
+            var launched = instance
+            launched.lastLaunchedAt = Date()
+            update(launched)
+        } catch {
+            errorMessage = "Could not launch Codex: \(error.localizedDescription)"
+        }
+    }
+
+    private func save() {
+        do {
+            try fileManager.createDirectory(
+                at: configURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+
+            let data = try JSONEncoder.instanceEncoder.encode(instances)
+            try data.write(to: configURL, options: .atomic)
+        } catch {
+            errorMessage = "Could not save instances: \(error.localizedDescription)"
+        }
+    }
+
+    private func removeHomeDirectoryIfPresent(_ path: String) throws {
+        let url = URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try fileManager.removeItem(at: url)
+    }
+
+    private func nextAvailableName(prefix: String) -> String {
+        let existingNames = Set(instances.map(\.name))
+        if !existingNames.contains(prefix) {
+            return prefix
+        }
+
+        var index = 2
+        while existingNames.contains("\(prefix) \(index)") {
+            index += 1
+        }
+        return "\(prefix) \(index)"
+    }
+}
+
+private extension JSONDecoder {
+    static var instanceDecoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+}
+
+private extension JSONEncoder {
+    static var instanceEncoder: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return encoder
+    }
+}
