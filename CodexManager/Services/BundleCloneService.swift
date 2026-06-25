@@ -98,7 +98,7 @@ struct BundleCloneService {
             return true
         }
 
-        return info[MetadataKey.schemaVersion] as? String != "1" ||
+        return info[MetadataKey.schemaVersion] as? String != "2" ||
             info[MetadataKey.instanceID] as? String != instance.id.uuidString ||
             info[MetadataKey.sourceBundleIdentifier] as? String != sourceFingerprint.bundleIdentifier ||
             info[MetadataKey.sourceShortVersion] as? String != sourceFingerprint.shortVersion ||
@@ -134,7 +134,7 @@ struct BundleCloneService {
             info["CFBundleIconName"] = URL(fileURLWithPath: iconFile).deletingPathExtension().lastPathComponent
         }
 
-        info[MetadataKey.schemaVersion] = "1"
+        info[MetadataKey.schemaVersion] = "2"
         info[MetadataKey.instanceID] = instance.id.uuidString
         info[MetadataKey.sourceBundleIdentifier] = sourceFingerprint.bundleIdentifier
         info[MetadataKey.sourceShortVersion] = sourceFingerprint.shortVersion
@@ -182,28 +182,31 @@ struct BundleCloneService {
         let sourceURL = URL(fileURLWithPath: NSString(string: iconPath).expandingTildeInPath)
         guard fileManager.fileExists(atPath: sourceURL.path) else { return nil }
 
-        let iconFileName = "codex-manager-instance-\(stableHash(iconFingerprint(for: iconPath))).icns"
-        let destinationURL = appURL
+        let image = try iconImage(at: sourceURL)
+        let resourcesURL = appURL
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Resources", isDirectory: true)
-            .appendingPathComponent(iconFileName)
+        let iconFileName = "codex-manager-instance-\(stableHash(iconFingerprint(for: iconPath))).icns"
+        let destinationURL = resourcesURL.appendingPathComponent(iconFileName)
 
         try removeItemIfPresent(at: destinationURL)
 
         if sourceURL.pathExtension.lowercased() == "icns" {
             try fileManager.copyItem(at: sourceURL, to: destinationURL)
         } else {
-            try createICNS(from: sourceURL, at: destinationURL)
+            try createICNS(from: image, at: destinationURL)
         }
+
+        try installRuntimeIcons(from: image, icnsURL: destinationURL, resourcesURL: resourcesURL)
 
         return iconFileName
     }
 
     private func createICNS(from sourceURL: URL, at destinationURL: URL) throws {
-        guard let image = NSImage(contentsOf: sourceURL) else {
-            throw BundleCloneError.invalidIcon(sourceURL.path)
-        }
+        try createICNS(from: iconImage(at: sourceURL), at: destinationURL)
+    }
 
+    private func createICNS(from image: NSImage, at destinationURL: URL) throws {
         let iconsetURL = fileManager.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("iconset")
@@ -229,6 +232,31 @@ struct BundleCloneService {
         }
 
         try run("/usr/bin/iconutil", arguments: ["-c", "icns", iconsetURL.path, "-o", destinationURL.path])
+    }
+
+    private func installRuntimeIcons(from image: NSImage, icnsURL: URL, resourcesURL: URL) throws {
+        for fileName in ["app.icns", "electron.icns", "icon.icns"] {
+            let destinationURL = resourcesURL.appendingPathComponent(fileName)
+            try removeItemIfPresent(at: destinationURL)
+            try fileManager.copyItem(at: icnsURL, to: destinationURL)
+        }
+
+        let pngData = try pngRepresentation(of: image, pixelSize: 1024)
+        for relativePath in ["icon.png", "default_app/icon.png"] {
+            let destinationURL = resourcesURL.appendingPathComponent(relativePath)
+            guard fileManager.fileExists(atPath: destinationURL.deletingLastPathComponent().path) else {
+                continue
+            }
+            try pngData.write(to: destinationURL, options: .atomic)
+        }
+    }
+
+    private func iconImage(at sourceURL: URL) throws -> NSImage {
+        if let image = NSImage(contentsOf: sourceURL) {
+            return image
+        }
+
+        throw BundleCloneError.invalidIcon(sourceURL.path)
     }
 
     private func pngRepresentation(of image: NSImage, pixelSize: Int) throws -> Data {
