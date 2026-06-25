@@ -7,6 +7,10 @@ Each managed instance gets its own display name, icon, cloned app bundle, and
 `CODEX_HOME` directory, so multiple Codex sessions can run side by side without
 sharing the same home directory.
 
+## Screenshots
+
+![Codex Pools main window](docs/screenshots/codex-pools-main.png)
+
 ## Features
 
 - Create, edit, duplicate, and delete Codex instances.
