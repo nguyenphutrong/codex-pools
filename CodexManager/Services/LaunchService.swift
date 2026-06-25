@@ -43,4 +43,8 @@ struct LaunchService {
     func removeManagedBundle(for instance: CodexInstance) throws {
         try bundleCloneService.removeBundle(for: instance)
     }
+
+    func bundleStatus(for instance: CodexInstance) -> CodexInstance.BundleStatus {
+        bundleCloneService.bundleStatus(for: instance)
+    }
 }

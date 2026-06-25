@@ -1,10 +1,17 @@
 import Foundation
 
 struct CodexInstance: Identifiable, Codable, Equatable {
+    enum BundleStatus: String, Codable, Equatable {
+        case ready
+        case needsRebuild
+        case missingSourceApp
+    }
+
     var id: UUID
     var name: String
     var iconPath: String?
     var codexHome: String
+    var bundleStatus: BundleStatus
     var createdAt: Date
     var lastLaunchedAt: Date?
 
@@ -13,6 +20,7 @@ struct CodexInstance: Identifiable, Codable, Equatable {
         name: String,
         iconPath: String? = nil,
         codexHome: String,
+        bundleStatus: BundleStatus = .missingSourceApp,
         createdAt: Date = Date(),
         lastLaunchedAt: Date? = nil
     ) {
@@ -20,8 +28,43 @@ struct CodexInstance: Identifiable, Codable, Equatable {
         self.name = name
         self.iconPath = iconPath
         self.codexHome = codexHome
+        self.bundleStatus = bundleStatus
         self.createdAt = createdAt
         self.lastLaunchedAt = lastLaunchedAt
+    }
+}
+
+extension CodexInstance {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case iconPath
+        case codexHome
+        case bundleStatus
+        case createdAt
+        case lastLaunchedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        iconPath = try container.decodeIfPresent(String.self, forKey: .iconPath)
+        codexHome = try container.decode(String.self, forKey: .codexHome)
+        bundleStatus = try container.decodeIfPresent(BundleStatus.self, forKey: .bundleStatus) ?? .missingSourceApp
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        lastLaunchedAt = try container.decodeIfPresent(Date.self, forKey: .lastLaunchedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(iconPath, forKey: .iconPath)
+        try container.encode(codexHome, forKey: .codexHome)
+        try container.encode(bundleStatus, forKey: .bundleStatus)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(lastLaunchedAt, forKey: .lastLaunchedAt)
     }
 }
 
