@@ -16,6 +16,10 @@ struct LaunchService {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         configuration.createsNewApplicationInstance = true
+        configuration.arguments = [
+            // Local clones are re-signed, so Chromium Keychain ACL prompts can repeat.
+            "--use-mock-keychain"
+        ]
 
         var environment = ProcessInfo.processInfo.environment
         environment["CODEX_HOME"] = homePath

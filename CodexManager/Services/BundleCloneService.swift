@@ -23,12 +23,14 @@ struct BundleCloneService {
         }
 
         let sourceFingerprint = try sourceFingerprint()
+        let signingIdentity = signingIdentity()
         let destinationURL = bundleURL(for: instance)
 
         guard needsRebuild(
             instance: instance,
             destinationURL: destinationURL,
-            sourceFingerprint: sourceFingerprint
+            sourceFingerprint: sourceFingerprint,
+            signingIdentity: signingIdentity
         ) else {
             return destinationURL
         }
@@ -48,10 +50,11 @@ struct BundleCloneService {
         try patchMainInfoPlist(
             for: instance,
             appURL: destinationURL,
-            sourceFingerprint: sourceFingerprint
+            sourceFingerprint: sourceFingerprint,
+            signingIdentity: signingIdentity
         )
         try patchHelperBundleIdentifiers(appURL: destinationURL, bundleIdentifier: instance.managedBundleIdentifier)
-        try signBundle(at: destinationURL)
+        try signBundle(at: destinationURL, signingIdentity: signingIdentity)
 
         return destinationURL
     }
@@ -68,7 +71,8 @@ struct BundleCloneService {
     private func needsRebuild(
         instance: CodexInstance,
         destinationURL: URL,
-        sourceFingerprint: SourceFingerprint
+        sourceFingerprint: SourceFingerprint,
+        signingIdentity: String
     ) -> Bool {
         guard fileManager.fileExists(atPath: destinationURL.path),
               let info = NSMutableDictionary(contentsOf: infoPlistURL(for: destinationURL))
@@ -83,6 +87,7 @@ struct BundleCloneService {
             info[MetadataKey.sourceBuildVersion] as? String != sourceFingerprint.buildVersion ||
             info[MetadataKey.sourceExecutableModifiedAt] as? String != sourceFingerprint.executableModifiedAt ||
             info[MetadataKey.iconFingerprint] as? String != iconFingerprint(for: instance.iconPath) ||
+            info[MetadataKey.signingIdentity] as? String != signingIdentity ||
             info["CFBundleIdentifier"] as? String != instance.managedBundleIdentifier ||
             info["CFBundleDisplayName"] as? String != instance.managedAppName
     }
@@ -90,7 +95,8 @@ struct BundleCloneService {
     private func patchMainInfoPlist(
         for instance: CodexInstance,
         appURL: URL,
-        sourceFingerprint: SourceFingerprint
+        sourceFingerprint: SourceFingerprint,
+        signingIdentity: String
     ) throws {
         let infoURL = infoPlistURL(for: appURL)
         guard let info = NSMutableDictionary(contentsOf: infoURL) else {
@@ -117,6 +123,7 @@ struct BundleCloneService {
         info[MetadataKey.sourceBuildVersion] = sourceFingerprint.buildVersion
         info[MetadataKey.sourceExecutableModifiedAt] = sourceFingerprint.executableModifiedAt
         info[MetadataKey.iconFingerprint] = iconFingerprint(for: instance.iconPath)
+        info[MetadataKey.signingIdentity] = signingIdentity
 
         guard info.write(to: infoURL, atomically: true) else {
             throw BundleCloneError.couldNotWriteInfoPlist(infoURL.path)
@@ -225,9 +232,9 @@ struct BundleCloneService {
         return pngData
     }
 
-    private func signBundle(at appURL: URL) throws {
+    private func signBundle(at appURL: URL, signingIdentity: String) throws {
         try removeItemIfPresent(at: appURL.appendingPathComponent("Contents/_CodeSignature", isDirectory: true))
-        try run("/usr/bin/codesign", arguments: ["--force", "--deep", "--sign", "-", appURL.path])
+        try run("/usr/bin/codesign", arguments: ["--force", "--deep", "--sign", signingIdentity, appURL.path])
     }
 
     private func sourceFingerprint() throws -> SourceFingerprint {
@@ -260,6 +267,66 @@ struct BundleCloneService {
         let modifiedAt = attributes?[.modificationDate] as? Date
         let timestamp = modifiedAt.map { String(Int($0.timeIntervalSince1970)) } ?? "missing"
         return "\(expandedPath)|\(timestamp)"
+    }
+
+    private func signingIdentity() -> String {
+        guard let candidate = signingIdentityCandidate(),
+              canUseSigningIdentity(candidate)
+        else {
+            return "-"
+        }
+
+        return candidate
+    }
+
+    private func signingIdentityCandidate() -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        process.arguments = ["find-identity", "-p", "codesigning", "-v"]
+
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = outputPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+
+        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8) else { return nil }
+
+        for line in output.components(separatedBy: .newlines) {
+            let fields = line.split(separator: " ", omittingEmptySubsequences: true)
+            guard fields.count >= 2,
+                  fields[0].hasSuffix(")"),
+                  fields[1].count >= 40
+            else {
+                continue
+            }
+
+            return String(fields[1])
+        }
+
+        return nil
+    }
+
+    private func canUseSigningIdentity(_ identity: String) -> Bool {
+        let testURL = fileManager.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? removeItemIfPresent(at: testURL) }
+
+        do {
+            try fileManager.copyItem(at: URL(fileURLWithPath: "/usr/bin/true"), to: testURL)
+            try run("/usr/bin/codesign", arguments: ["--force", "--sign", identity, testURL.path])
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func run(_ executablePath: String, arguments: [String]) throws {
@@ -318,6 +385,7 @@ private enum MetadataKey {
     static let sourceBuildVersion = "CodexManagerSourceBuildVersion"
     static let sourceExecutableModifiedAt = "CodexManagerSourceExecutableModifiedAt"
     static let iconFingerprint = "CodexManagerIconFingerprint"
+    static let signingIdentity = "CodexManagerSigningIdentity"
 }
 
 private enum BundleCloneError: LocalizedError {
