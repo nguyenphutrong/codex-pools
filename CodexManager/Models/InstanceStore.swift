@@ -8,6 +8,7 @@ final class InstanceStore: ObservableObject {
     @Published var errorMessage: String?
     @Published private var launchingInstanceIDs: Set<CodexInstance.ID> = []
 
+    private let exportService = ExportService()
     private let launchService = LaunchService()
     private let fileManager: FileManager
     private let configURL: URL
@@ -162,6 +163,14 @@ final class InstanceStore: ObservableObject {
         launchingInstanceIDs.contains(instance.id)
     }
 
+    func exportInstances() {
+        do {
+            try exportService.export(instances: instances)
+        } catch {
+            errorMessage = "Could not export instances: \(error.localizedDescription)"
+        }
+    }
+
     private func save() {
         do {
             try fileManager.createDirectory(
@@ -193,22 +202,5 @@ final class InstanceStore: ObservableObject {
             index += 1
         }
         return "\(prefix) \(index)"
-    }
-}
-
-private extension JSONDecoder {
-    static var instanceDecoder: JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }
-}
-
-private extension JSONEncoder {
-    static var instanceEncoder: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
     }
 }
