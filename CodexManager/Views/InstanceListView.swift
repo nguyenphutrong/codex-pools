@@ -30,6 +30,7 @@ struct InstanceListView: View {
 }
 
 private struct InstanceRow: View {
+    @EnvironmentObject private var store: InstanceStore
     let instance: CodexInstance
 
     var body: some View {
@@ -48,6 +49,14 @@ private struct InstanceRow: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    if store.isRunning(instance) {
+                        InstanceStateBadge(title: "Running", systemImage: "circle.fill", tint: .green)
+                    }
+
+                    BundleStatusBadge(status: instance.bundleStatus)
+                }
             }
         }
         .padding(.vertical, 4)
@@ -59,6 +68,35 @@ private struct InstanceRow: View {
         }
 
         return "Last launched \(lastLaunchedAt.formatted(date: .abbreviated, time: .shortened))"
+    }
+}
+
+struct BundleStatusBadge: View {
+    let status: CodexInstance.BundleStatus
+
+    var body: some View {
+        switch status {
+        case .ready:
+            InstanceStateBadge(title: "Ready", systemImage: "checkmark.circle.fill", tint: .secondary)
+        case .needsRebuild:
+            InstanceStateBadge(title: "Needs rebuild", systemImage: "exclamationmark.triangle.fill", tint: .orange)
+        case .missingSourceApp:
+            InstanceStateBadge(title: "Missing Codex.app", systemImage: "xmark.octagon.fill", tint: .red)
+        }
+    }
+}
+
+struct InstanceStateBadge: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(tint)
+            .labelStyle(.titleAndIcon)
+            .lineLimit(1)
     }
 }
 
