@@ -7,6 +7,7 @@ final class InstanceStore: ObservableObject {
     @Published private(set) var templates: [CodexTemplate] = []
     @Published var selectedInstanceID: CodexInstance.ID?
     @Published var errorMessage: String?
+    @Published var isShowingTemplatePicker = false
     @Published private var launchingInstanceIDs: Set<CodexInstance.ID> = []
 
     private let launchService = LaunchService()
@@ -71,6 +72,7 @@ final class InstanceStore: ObservableObject {
 
         instances.append(instance)
         selectedInstanceID = instance.id
+        isShowingTemplatePicker = false
         save()
     }
 
@@ -83,7 +85,12 @@ final class InstanceStore: ObservableObject {
 
         instances.append(instance)
         selectedInstanceID = instance.id
+        isShowingTemplatePicker = false
         save()
+    }
+
+    func showTemplatePicker() {
+        isShowingTemplatePicker = true
     }
 
     func loadTemplates() {

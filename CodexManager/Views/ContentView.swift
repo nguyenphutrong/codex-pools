@@ -21,6 +21,10 @@ struct ContentView: View {
         } message: {
             Text(store.errorMessage ?? "")
         }
+        .sheet(isPresented: $store.isShowingTemplatePicker) {
+            TemplatePickerView()
+                .environmentObject(store)
+        }
     }
 
     private var errorBinding: Binding<Bool> {

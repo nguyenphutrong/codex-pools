@@ -23,7 +23,7 @@ struct CodexPoolsApp: App {
         .commands {
             CommandMenu("Instance") {
                 Button("New Instance") {
-                    store.createInstance()
+                    store.showTemplatePicker()
                 }
                 .keyboardShortcut("n", modifiers: [.command])
 
