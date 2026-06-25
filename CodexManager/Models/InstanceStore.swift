@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class InstanceStore: ObservableObject {
     @Published private(set) var instances: [CodexInstance] = []
+    @Published private(set) var templates: [CodexTemplate] = []
     @Published var selectedInstanceID: CodexInstance.ID?
     @Published var errorMessage: String?
     @Published private var launchingInstanceIDs: Set<CodexInstance.ID> = []
@@ -11,6 +12,7 @@ final class InstanceStore: ObservableObject {
     private let launchService = LaunchService()
     private let fileManager: FileManager
     private let configURL: URL
+    private let templatesURL: URL
     private let iconDirectoryURL: URL
 
     var selectedInstance: CodexInstance? {
@@ -26,6 +28,10 @@ final class InstanceStore: ObservableObject {
             .appendingPathComponent(".config")
             .appendingPathComponent("codex-pools")
             .appendingPathComponent("instances.json")
+        self.templatesURL = home
+            .appendingPathComponent(".config")
+            .appendingPathComponent("codex-pools")
+            .appendingPathComponent("templates.json")
 
         self.iconDirectoryURL = home
             .appendingPathComponent("Library")
@@ -34,6 +40,7 @@ final class InstanceStore: ObservableObject {
             .appendingPathComponent("Icons")
 
         load()
+        loadTemplates()
     }
 
     func load() {
@@ -65,6 +72,27 @@ final class InstanceStore: ObservableObject {
         instances.append(instance)
         selectedInstanceID = instance.id
         save()
+    }
+
+    func loadTemplates() {
+        do {
+            guard fileManager.fileExists(atPath: templatesURL.path) else {
+                templates = CodexTemplate.builtInTemplates
+                saveTemplates()
+                return
+            }
+
+            let data = try Data(contentsOf: templatesURL)
+            let decodedTemplates = try JSONDecoder.instanceDecoder.decode([CodexTemplate].self, from: data)
+            templates = decodedTemplates.isEmpty ? CodexTemplate.builtInTemplates : decodedTemplates
+
+            if decodedTemplates.isEmpty {
+                saveTemplates()
+            }
+        } catch {
+            errorMessage = "Could not load templates: \(error.localizedDescription)"
+            templates = CodexTemplate.builtInTemplates
+        }
     }
 
     func update(_ instance: CodexInstance) {
@@ -173,6 +201,20 @@ final class InstanceStore: ObservableObject {
             try data.write(to: configURL, options: .atomic)
         } catch {
             errorMessage = "Could not save instances: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveTemplates() {
+        do {
+            try fileManager.createDirectory(
+                at: templatesURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+
+            let data = try JSONEncoder.instanceEncoder.encode(templates)
+            try data.write(to: templatesURL, options: .atomic)
+        } catch {
+            errorMessage = "Could not save templates: \(error.localizedDescription)"
         }
     }
 
