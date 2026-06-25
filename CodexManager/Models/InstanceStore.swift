@@ -10,8 +10,10 @@ final class InstanceStore: ObservableObject {
     }
 
     @Published private(set) var instances: [CodexInstance] = []
+    @Published private(set) var templates: [CodexTemplate] = []
     @Published var selectedInstanceID: CodexInstance.ID?
     @Published var errorMessage: String?
+    @Published var isShowingTemplatePicker = false
     @Published var pendingImportedInstances: [CodexInstance]?
     @Published private(set) var runningInstanceIDs: Set<CodexInstance.ID> = []
     @Published private var launchingInstanceIDs: Set<CodexInstance.ID> = []
@@ -21,6 +23,7 @@ final class InstanceStore: ObservableObject {
     private let launchService = LaunchService()
     private let fileManager: FileManager
     private let configURL: URL
+    private let templatesURL: URL
     private let iconDirectoryURL: URL
     private var runningAppsCancellable: AnyCancellable?
 
@@ -37,6 +40,10 @@ final class InstanceStore: ObservableObject {
             .appendingPathComponent(".config")
             .appendingPathComponent("codex-pools")
             .appendingPathComponent("instances.json")
+        self.templatesURL = home
+            .appendingPathComponent(".config")
+            .appendingPathComponent("codex-pools")
+            .appendingPathComponent("templates.json")
 
         self.iconDirectoryURL = home
             .appendingPathComponent("Library")
@@ -45,6 +52,7 @@ final class InstanceStore: ObservableObject {
             .appendingPathComponent("Icons")
 
         load()
+        loadTemplates()
         refreshBundleStatuses()
         startRunningAppsObserver()
     }
@@ -79,7 +87,46 @@ final class InstanceStore: ObservableObject {
 
         instances.append(instance)
         selectedInstanceID = instance.id
+        isShowingTemplatePicker = false
         save()
+    }
+
+    func createInstance(from template: CodexTemplate) {
+        let baseName = nextAvailableName(prefix: template.name)
+        let instance = CodexInstance(
+            name: baseName,
+            codexHome: nextAvailableTemplateHomePath(for: template)
+        )
+
+        instances.append(instance)
+        selectedInstanceID = instance.id
+        isShowingTemplatePicker = false
+        save()
+    }
+
+    func showTemplatePicker() {
+        isShowingTemplatePicker = true
+    }
+
+    func loadTemplates() {
+        do {
+            guard fileManager.fileExists(atPath: templatesURL.path) else {
+                templates = CodexTemplate.builtInTemplates
+                saveTemplates()
+                return
+            }
+
+            let data = try Data(contentsOf: templatesURL)
+            let decodedTemplates = try JSONDecoder.instanceDecoder.decode([CodexTemplate].self, from: data)
+            templates = decodedTemplates.isEmpty ? CodexTemplate.builtInTemplates : decodedTemplates
+
+            if decodedTemplates.isEmpty {
+                saveTemplates()
+            }
+        } catch {
+            errorMessage = "Could not load templates: \(error.localizedDescription)"
+            templates = CodexTemplate.builtInTemplates
+        }
     }
 
     func update(_ instance: CodexInstance) {
@@ -301,6 +348,20 @@ final class InstanceStore: ObservableObject {
         }
     }
 
+    private func saveTemplates() {
+        do {
+            try fileManager.createDirectory(
+                at: templatesURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+
+            let data = try JSONEncoder.instanceEncoder.encode(templates)
+            try data.write(to: templatesURL, options: .atomic)
+        } catch {
+            errorMessage = "Could not save templates: \(error.localizedDescription)"
+        }
+    }
+
     private func removeHomeDirectoryIfPresent(_ path: String) throws {
         let url = URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
         guard fileManager.fileExists(atPath: url.path) else { return }
@@ -318,6 +379,24 @@ final class InstanceStore: ObservableObject {
             index += 1
         }
         return "\(prefix) \(index)"
+    }
+
+    private func nextAvailableTemplateHomePath(for template: CodexTemplate) -> String {
+        let home = fileManager.homeDirectoryForCurrentUser
+        let codexDirectory = home.appendingPathComponent(".codex")
+        let basePath = codexDirectory.appendingPathComponent(template.safeHomePathSuffix).path
+        let existingHomes = Set(instances.map(\.codexHome))
+
+        if !existingHomes.contains(basePath) {
+            return basePath
+        }
+
+        var index = 2
+        while existingHomes.contains("\(basePath)-\(index)") {
+            index += 1
+        }
+
+        return "\(basePath)-\(index)"
     }
 
     private func merge(_ importedInstances: [CodexInstance]) {
