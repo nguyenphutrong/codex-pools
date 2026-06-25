@@ -15,12 +15,15 @@ final class InstanceStore: ObservableObject {
     @Published var errorMessage: String?
     @Published var isShowingTemplatePicker = false
     @Published var pendingImportedInstances: [CodexInstance]?
+    @Published private(set) var sessionScanResult = CodexSessionScanResult(sessions: [], skippedFileCount: 0)
+    @Published private(set) var sessionStatusMessage: String?
     @Published private(set) var runningInstanceIDs: Set<CodexInstance.ID> = []
     @Published private var launchingInstanceIDs: Set<CodexInstance.ID> = []
 
     private let exportService = ExportService()
     private let importService = ImportService()
     private let launchService = LaunchService()
+    private let sessionService = CodexSessionService()
     private let fileManager: FileManager
     private let configURL: URL
     private let templatesURL: URL
@@ -287,6 +290,49 @@ final class InstanceStore: ObservableObject {
 
     func isRunning(_ instance: CodexInstance) -> Bool {
         runningInstanceIDs.contains(instance.id)
+    }
+
+    func refreshSessions() {
+        sessionScanResult = sessionService.scanSessions(for: instances)
+    }
+
+    func copySessions(_ sessionIDs: Set<CodexSessionThread.ID>, to targetInstanceID: CodexInstance.ID) {
+        guard let target = instances.first(where: { $0.id == targetInstanceID }) else { return }
+        do {
+            let summary = try sessionService.copySessions(
+                sessionIDs: sessionIDs,
+                to: target,
+                from: instances
+            )
+            sessionStatusMessage = "Copied \(summary.copiedSessionCount) session(s) to \(target.managedAppName)."
+            refreshSessions()
+        } catch {
+            errorMessage = "Could not copy sessions: \(error.localizedDescription)"
+        }
+    }
+
+    func syncSessionsAcrossIdleInstances() {
+        do {
+            let summary = try sessionService.syncSessionsAcrossIdleInstances(
+                instances,
+                runningInstanceIDs: runningInstanceIDs
+            )
+            sessionStatusMessage = "Synced \(summary.addedSessionCount + summary.updatedSessionCount) session(s) across \(summary.mutatedInstanceCount) instance(s)."
+            refreshSessions()
+        } catch {
+            errorMessage = "Could not sync sessions: \(error.localizedDescription)"
+        }
+    }
+
+    func repairSessionIndex(for instanceID: CodexInstance.ID) {
+        guard let instance = instances.first(where: { $0.id == instanceID }) else { return }
+        do {
+            let summary = try sessionService.repairSessionIndex(for: instance)
+            sessionStatusMessage = "Rebuilt \(summary.indexedSessionCount) session index entries for \(instance.managedAppName)."
+            refreshSessions()
+        } catch {
+            errorMessage = "Could not repair session index: \(error.localizedDescription)"
+        }
     }
 
     private func startRunningAppsObserver() {

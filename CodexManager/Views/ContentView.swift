@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var store: InstanceStore
+    @State private var isShowingSessionBrowser = false
 
     var body: some View {
         NavigationSplitView {
@@ -43,6 +44,13 @@ struct ContentView: View {
         .toolbar {
             ToolbarItemGroup {
                 Button {
+                    isShowingSessionBrowser = true
+                } label: {
+                    Label("Sessions", systemImage: "text.bubble")
+                }
+                .disabled(store.instances.isEmpty)
+
+                Button {
                     store.selectConfigurationForImport()
                 } label: {
                     Label("Import", systemImage: "square.and.arrow.down")
@@ -58,6 +66,10 @@ struct ContentView: View {
         }
         .sheet(isPresented: $store.isShowingTemplatePicker) {
             TemplatePickerView()
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $isShowingSessionBrowser) {
+            SessionBrowserView()
                 .environmentObject(store)
         }
     }
