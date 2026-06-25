@@ -68,6 +68,7 @@ struct BundleCloneService {
             signingIdentity: signingIdentity
         )
         try patchHelperBundleIdentifiers(appURL: stagingBundleURL, bundleIdentifier: instance.managedBundleIdentifier)
+        try disableDockTilePlugin(appURL: stagingBundleURL)
         try signBundle(at: stagingBundleURL, signingIdentity: signingIdentity)
         try verifyBundle(at: stagingBundleURL)
         try replacePreparedBundle(at: stagingDirectoryURL, for: instance)
@@ -98,7 +99,7 @@ struct BundleCloneService {
             return true
         }
 
-        return info[MetadataKey.schemaVersion] as? String != "2" ||
+        return info[MetadataKey.schemaVersion] as? String != "3" ||
             info[MetadataKey.instanceID] as? String != instance.id.uuidString ||
             info[MetadataKey.sourceBundleIdentifier] as? String != sourceFingerprint.bundleIdentifier ||
             info[MetadataKey.sourceShortVersion] as? String != sourceFingerprint.shortVersion ||
@@ -128,13 +129,14 @@ struct BundleCloneService {
         info["CrProductDirName"] = instance.managedBundleIdentifier
         info["SUEnableAutomaticChecks"] = false
         info["SUAllowsAutomaticUpdates"] = false
+        info.removeObject(forKey: "NSDockTilePlugIn")
 
         if let iconFile = try installIcon(from: instance.iconPath, into: appURL) {
             info["CFBundleIconFile"] = iconFile
             info["CFBundleIconName"] = URL(fileURLWithPath: iconFile).deletingPathExtension().lastPathComponent
         }
 
-        info[MetadataKey.schemaVersion] = "2"
+        info[MetadataKey.schemaVersion] = "3"
         info[MetadataKey.instanceID] = instance.id.uuidString
         info[MetadataKey.sourceBundleIdentifier] = sourceFingerprint.bundleIdentifier
         info[MetadataKey.sourceShortVersion] = sourceFingerprint.shortVersion
@@ -174,6 +176,15 @@ struct BundleCloneService {
                 throw BundleCloneError.couldNotWriteInfoPlist(infoURL.path)
             }
         }
+    }
+
+    private func disableDockTilePlugin(appURL: URL) throws {
+        let pluginURL = appURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("PlugIns", isDirectory: true)
+            .appendingPathComponent("CodexDockTilePlugin.plugin", isDirectory: true)
+
+        try removeItemIfPresent(at: pluginURL)
     }
 
     private func installIcon(from iconPath: String?, into appURL: URL) throws -> String? {
