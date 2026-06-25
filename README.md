@@ -103,7 +103,30 @@ GitHub Actions workflows are included:
 - `CI`: builds the Swift package and validates the generated macOS app bundle.
 - `Release`: on `v*` tags, builds `dist/Codex Pools.app`, packages DMG and ZIP
   artifacts, writes SHA-256 checksums, and publishes a GitHub Release.
+  It also generates a Sparkle appcast and deploys it to GitHub Pages at
+  `https://nguyenphutrong.github.io/codex-pools/appcast.xml`.
   CI and release jobs run on `macos-26` so builds use the macOS 26 SDK.
+
+### Auto-updates
+
+Codex Pools uses Sparkle 2 to check for updates. The app checks automatically
+and asks before installing a new version. Users can also choose
+`Codex Pools > Check for Updates...`.
+
+Before publishing auto-updating releases, generate Sparkle EdDSA keys once:
+
+```bash
+swift build
+generate_keys="$(find .build/artifacts -path '*/bin/generate_keys' -type f -print -quit)"
+"$generate_keys"
+"$generate_keys" -x sparkle_ed_private_key.txt
+```
+
+Add the printed public key as the `SPARKLE_PUBLIC_ED_KEY` GitHub Actions
+secret. Store the contents of `sparkle_ed_private_key.txt` in the
+`SPARKLE_ED_PRIVATE_KEY` secret, then delete the local export. Release builds
+fail if either secret is missing. Local development builds omit `SUPublicEDKey`
+unless `SPARKLE_PUBLIC_ED_KEY` is set in the environment.
 
 Create and publish a release with:
 
