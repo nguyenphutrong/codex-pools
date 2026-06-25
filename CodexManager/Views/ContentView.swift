@@ -56,6 +56,10 @@ struct ContentView: View {
                 .disabled(store.instances.isEmpty)
             }
         }
+        .sheet(isPresented: $store.isShowingTemplatePicker) {
+            TemplatePickerView()
+                .environmentObject(store)
+        }
     }
 
     private var errorBinding: Binding<Bool> {

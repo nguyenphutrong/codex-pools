@@ -17,7 +17,7 @@ struct InstanceListView: View {
             Divider()
 
             Button {
-                store.createInstance()
+                store.showTemplatePicker()
             } label: {
                 Label("New Instance", systemImage: "plus")
                     .frame(maxWidth: .infinity, alignment: .leading)
