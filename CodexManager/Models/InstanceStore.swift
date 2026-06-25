@@ -372,16 +372,7 @@ final class InstanceStore: ObservableObject {
     }
 
     private func nextAvailableName(prefix: String) -> String {
-        let existingNames = Set(instances.map(\.name))
-        if !existingNames.contains(prefix) {
-            return prefix
-        }
-
-        var index = 2
-        while existingNames.contains("\(prefix) \(index)") {
-            index += 1
-        }
-        return "\(prefix) \(index)"
+        InstanceNaming.nextAvailableName(prefix: prefix, existingNames: Set(instances.map(\.name)))
     }
 
     private func nextAvailableTemplateHomePath(for template: CodexTemplate) -> String {

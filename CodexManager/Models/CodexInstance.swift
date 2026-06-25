@@ -82,15 +82,10 @@ extension CodexInstance {
 
 extension CodexInstance {
     static func defaultHomePath(for name: String) -> String {
-        let slug = name
-            .lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { !$0.isEmpty }
-            .joined(separator: "-")
-
-        let safeSlug = slug.isEmpty ? "codex-instance" : slug
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".codex").appendingPathComponent(safeSlug).path
+        InstanceNaming.defaultHomePath(
+            for: name,
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        )
     }
 
     var managedBundleIdentifier: String {
