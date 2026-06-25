@@ -69,6 +69,7 @@ struct BundleCloneService {
         )
         try patchHelperBundleIdentifiers(appURL: stagingBundleURL, bundleIdentifier: instance.managedBundleIdentifier)
         try disableDockTilePlugin(appURL: stagingBundleURL)
+        stripExtendedAttributes(at: stagingBundleURL)
         try signBundle(at: stagingBundleURL, signingIdentity: signingIdentity)
         try verifyBundle(at: stagingBundleURL)
         try replacePreparedBundle(at: stagingDirectoryURL, for: instance)
@@ -99,7 +100,7 @@ struct BundleCloneService {
             return true
         }
 
-        return info[MetadataKey.schemaVersion] as? String != "3" ||
+        return info[MetadataKey.schemaVersion] as? String != CloneSchema.current ||
             info[MetadataKey.instanceID] as? String != instance.id.uuidString ||
             info[MetadataKey.sourceBundleIdentifier] as? String != sourceFingerprint.bundleIdentifier ||
             info[MetadataKey.sourceShortVersion] as? String != sourceFingerprint.shortVersion ||
@@ -136,7 +137,7 @@ struct BundleCloneService {
             info["CFBundleIconName"] = URL(fileURLWithPath: iconFile).deletingPathExtension().lastPathComponent
         }
 
-        info[MetadataKey.schemaVersion] = "3"
+        info[MetadataKey.schemaVersion] = CloneSchema.current
         info[MetadataKey.instanceID] = instance.id.uuidString
         info[MetadataKey.sourceBundleIdentifier] = sourceFingerprint.bundleIdentifier
         info[MetadataKey.sourceShortVersion] = sourceFingerprint.shortVersion
@@ -253,7 +254,7 @@ struct BundleCloneService {
         }
 
         let pngData = try pngRepresentation(of: image, pixelSize: 1024)
-        for relativePath in ["icon.png", "default_app/icon.png"] {
+        for relativePath in ["icon.png", "default_app/icon.png", "icon-codex-dark.png", "icon-codex-light.png"] {
             let destinationURL = resourcesURL.appendingPathComponent(relativePath)
             guard fileManager.fileExists(atPath: destinationURL.deletingLastPathComponent().path) else {
                 continue
@@ -299,6 +300,10 @@ struct BundleCloneService {
             "/usr/bin/codesign",
             arguments: ["--verify", "--deep", "--strict", "--verbose=1", appURL.path]
         )
+    }
+
+    private func stripExtendedAttributes(at appURL: URL) {
+        try? run("/usr/bin/xattr", arguments: ["-cr", appURL.path])
     }
 
     private func sourceFingerprint() throws -> SourceFingerprint {
@@ -496,6 +501,8 @@ struct BundleCloneService {
 
     private func refreshLaunchServicesRegistration(at appURL: URL) {
         let lsregisterURL = URL(fileURLWithPath: "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister")
+        try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: appURL.path)
+        try? run(lsregisterURL.path, arguments: ["-u", appURL.path])
         try? run(lsregisterURL.path, arguments: ["-f", appURL.path])
         NSWorkspace.shared.noteFileSystemChanged(appURL.path)
     }
@@ -552,6 +559,10 @@ private struct SourceFingerprint {
     let shortVersion: String
     let buildVersion: String
     let executableModifiedAt: String
+}
+
+private enum CloneSchema {
+    static let current = "4"
 }
 
 private enum MetadataKey {
