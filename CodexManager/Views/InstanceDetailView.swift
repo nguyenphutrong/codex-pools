@@ -28,7 +28,8 @@ struct InstanceDetailView: View {
                             .lineLimit(1)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(12)
+                .liquidGlassPanel()
             }
 
             Section("Configuration") {
@@ -56,6 +57,7 @@ struct InstanceDetailView: View {
                             Label("Launch", systemImage: "play.fill")
                         }
                     }
+                    .liquidGlassButtonStyle(.prominent)
                     .keyboardShortcut(.return, modifiers: [.command])
                     .disabled(!canSave || isLaunching)
 
@@ -64,6 +66,7 @@ struct InstanceDetailView: View {
                     } label: {
                         Label("Save", systemImage: "checkmark")
                     }
+                    .liquidGlassButtonStyle()
                     .keyboardShortcut("s", modifiers: [.command])
                     .disabled(!canSave || isLaunching)
 
@@ -73,6 +76,7 @@ struct InstanceDetailView: View {
                     } label: {
                         Label("Duplicate", systemImage: "plus.square.on.square")
                     }
+                    .liquidGlassButtonStyle()
 
                     Spacer()
 
@@ -81,7 +85,10 @@ struct InstanceDetailView: View {
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
+                    .liquidGlassButtonStyle()
                 }
+                .padding(10)
+                .liquidGlassPanel(cornerRadius: 14)
             }
         }
         .formStyle(.grouped)
@@ -164,5 +171,38 @@ struct InstanceDetailView: View {
     private var lastLaunchedText: String {
         guard let lastLaunchedAt = draft.lastLaunchedAt else { return "Never" }
         return lastLaunchedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+private enum LiquidGlassButtonProminence {
+    case standard
+    case prominent
+}
+
+private extension View {
+    @ViewBuilder
+    func liquidGlassPanel(cornerRadius: CGFloat = 18) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(
+                .regular,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func liquidGlassButtonStyle(_ prominence: LiquidGlassButtonProminence = .standard) -> some View {
+        if #available(macOS 26.0, *) {
+            switch prominence {
+            case .standard:
+                self.buttonStyle(.glass)
+            case .prominent:
+                self.buttonStyle(.glassProminent)
+            }
+        } else {
+            self
+        }
     }
 }

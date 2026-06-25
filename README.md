@@ -99,6 +99,7 @@ GitHub Actions workflows are included:
 - `CI`: builds the Swift package and validates the generated macOS app bundle.
 - `Release`: on `v*` tags, builds `dist/Codex Pools.app`, packages DMG and ZIP
   artifacts, writes SHA-256 checksums, and publishes a GitHub Release.
+  CI and release jobs run on `macos-26` so builds use the macOS 26 SDK.
 
 Create and publish a release with:
 
