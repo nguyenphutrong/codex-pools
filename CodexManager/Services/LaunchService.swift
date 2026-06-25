@@ -43,4 +43,31 @@ struct LaunchService {
     func removeManagedBundle(for instance: CodexInstance) throws {
         try bundleCloneService.removeBundle(for: instance)
     }
+
+    func bundleStatus(for instance: CodexInstance) -> CodexInstance.BundleStatus {
+        bundleCloneService.bundleStatus(for: instance)
+    }
+
+    func quit(instance: CodexInstance) throws {
+        let runningApplications = NSWorkspace.shared.runningApplications.filter {
+            $0.bundleIdentifier == instance.managedBundleIdentifier
+        }
+
+        for application in runningApplications {
+            guard application.terminate() else {
+                throw LaunchServiceError.couldNotTerminate(instance.managedAppName)
+            }
+        }
+    }
+}
+
+private enum LaunchServiceError: LocalizedError {
+    case couldNotTerminate(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .couldNotTerminate(let name):
+            return "Could not quit \(name)."
+        }
+    }
 }
