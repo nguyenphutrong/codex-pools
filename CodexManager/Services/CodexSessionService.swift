@@ -2,6 +2,7 @@ import Foundation
 
 struct CodexSessionService {
     private let fileManager: FileManager
+    private let iso8601Formatter = ISO8601DateFormatter()
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -49,6 +50,120 @@ struct CodexSessionService {
         }
 
         return CodexSessionScanResult(sessions: sessions, skippedFileCount: skippedFileCount)
+    }
+
+    func copySessions(
+        sessionIDs: Set<CodexSessionThread.ID>,
+        to targetInstance: CodexInstance,
+        from instances: [CodexInstance]
+    ) throws -> CodexSessionCopySummary {
+        let requestedSessionCount = sessionIDs.count
+        guard requestedSessionCount > 0 else {
+            return CodexSessionCopySummary(
+                requestedSessionCount: 0,
+                copiedSessionCount: 0,
+                skippedSessionCount: 0,
+                missingSessionCount: 0,
+                backupDirectory: nil
+            )
+        }
+
+        let scan = scanSessions(for: instances)
+        let sessionsByID = Dictionary(uniqueKeysWithValues: scan.sessions.map { ($0.id, $0) })
+        let targetHomeURL = codexHomeURL(for: targetInstance)
+        var copiedSessions: [CodexSessionThread] = []
+        var skippedSessionCount = 0
+        var missingSessionCount = 0
+        var backupDirectory: URL?
+
+        for id in sessionIDs {
+            guard let session = sessionsByID[id] else {
+                missingSessionCount += 1
+                continue
+            }
+            guard session.instanceID != targetInstance.id else {
+                skippedSessionCount += 1
+                continue
+            }
+
+            let sourceURL = URL(fileURLWithPath: session.rolloutPath)
+            let targetURL = targetHomeURL.appendingPathComponent(session.relativeRolloutPath)
+            if pathsPointToSameFile(sourceURL, targetURL) {
+                skippedSessionCount += 1
+                continue
+            }
+
+            if fileManager.fileExists(atPath: targetURL.path) {
+                let backupRoot = try ensureBackupDirectory(&backupDirectory, targetHomeURL: targetHomeURL)
+                try backupExistingFile(targetURL, rootURL: targetHomeURL, backupDirectory: backupRoot)
+                try fileManager.removeItem(at: targetURL)
+            }
+
+            try fileManager.createDirectory(
+                at: targetURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try fileManager.copyItem(at: sourceURL, to: targetURL)
+            restoreModifiedDate(from: sourceURL, to: targetURL)
+
+            var copied = session
+            copied.instanceID = targetInstance.id
+            copied.instanceName = targetInstance.managedAppName
+            copied.codexHome = targetHomeURL.path
+            copied.rolloutPath = targetURL.path
+            copied.id = "\(targetInstance.id.uuidString):\(session.threadID)"
+            copiedSessions.append(copied)
+        }
+
+        if !copiedSessions.isEmpty {
+            let repairSummary = try repairSessionIndex(
+                for: targetInstance,
+                preferredSessions: copiedSessions,
+                existingBackupDirectory: backupDirectory
+            )
+            backupDirectory = repairSummary.backupDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        }
+
+        return CodexSessionCopySummary(
+            requestedSessionCount: requestedSessionCount,
+            copiedSessionCount: copiedSessions.count,
+            skippedSessionCount: skippedSessionCount,
+            missingSessionCount: missingSessionCount,
+            backupDirectory: backupDirectory?.path
+        )
+    }
+
+    @discardableResult
+    func repairSessionIndex(
+        for instance: CodexInstance,
+        preferredSessions: [CodexSessionThread] = [],
+        existingBackupDirectory: URL? = nil
+    ) throws -> CodexSessionRepairSummary {
+        let homeURL = codexHomeURL(for: instance)
+        let scan = scanSessions(for: [instance])
+        let preferredByThreadID = Dictionary(uniqueKeysWithValues: preferredSessions.map { ($0.threadID, $0) })
+        let sessions = scan.sessions.map { preferredByThreadID[$0.threadID] ?? $0 }
+        let indexURL = homeURL.appendingPathComponent("session_index.jsonl")
+        var backupDirectory = existingBackupDirectory
+
+        if fileManager.fileExists(atPath: indexURL.path) {
+            let backupRoot = try ensureBackupDirectory(&backupDirectory, targetHomeURL: homeURL)
+            try backupExistingFile(indexURL, rootURL: homeURL, backupDirectory: backupRoot)
+        }
+
+        let lines = sessions
+            .sorted { $0.threadID < $1.threadID }
+            .compactMap(sessionIndexLine)
+            .joined(separator: "\n")
+        let content = lines.isEmpty ? "" : "\(lines)\n"
+        try fileManager.createDirectory(at: homeURL, withIntermediateDirectories: true)
+        try content.write(to: indexURL, atomically: true, encoding: .utf8)
+
+        return CodexSessionRepairSummary(
+            instanceID: instance.id,
+            indexedSessionCount: sessions.count,
+            backupDirectory: backupDirectory?.path
+        )
     }
 
     private func codexHomeURL(for instance: CodexInstance) -> URL {
@@ -107,6 +222,7 @@ struct CodexSessionService {
 
         return CodexSessionThread(
             id: "\(instance.id.uuidString):\(threadID)",
+            threadID: threadID,
             instanceID: instance.id,
             instanceName: instance.managedAppName,
             codexHome: homeURL.path,
@@ -166,6 +282,10 @@ struct CodexSessionService {
 
     private func title(in object: [String: Any]?) -> String? {
         guard let object else { return nil }
+        if let payload = object["payload"] as? [String: Any],
+           let payloadTitle = title(in: payload) {
+            return payloadTitle
+        }
         for key in ["thread_name", "threadName", "title", "name"] {
             if let value = stringValue(object[key])?.trimmingCharacters(in: .whitespacesAndNewlines),
                !value.isEmpty {
@@ -213,7 +333,7 @@ struct CodexSessionService {
             return Date(timeIntervalSince1970: normalizedMilliseconds(number.int64Value) / 1_000)
         }
         if let text = value as? String {
-            if let date = ISO8601DateFormatter().date(from: text) {
+            if let date = iso8601Formatter.date(from: text) {
                 return date
             }
             if let integer = Int64(text) {
@@ -248,6 +368,72 @@ struct CodexSessionService {
         let filePath = fileURL.standardizedFileURL.path
         guard filePath.hasPrefix(rootPath + "/") else { return fileURL.lastPathComponent }
         return String(filePath.dropFirst(rootPath.count + 1))
+    }
+
+    private func ensureBackupDirectory(_ backupDirectory: inout URL?, targetHomeURL: URL) throws -> URL {
+        if let backupDirectory {
+            return backupDirectory
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let directory = targetHomeURL
+            .appendingPathComponent(".codex-pools", isDirectory: true)
+            .appendingPathComponent("session-backups", isDirectory: true)
+            .appendingPathComponent("\(formatter.string(from: Date()))-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        backupDirectory = directory
+        return directory
+    }
+
+    private func backupExistingFile(_ fileURL: URL, rootURL: URL, backupDirectory: URL) throws {
+        let backupURL = backupDirectory.appendingPathComponent(relativePath(from: rootURL, to: fileURL))
+        try fileManager.createDirectory(
+            at: backupURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        if fileManager.fileExists(atPath: backupURL.path) {
+            try fileManager.removeItem(at: backupURL)
+        }
+        try fileManager.copyItem(at: fileURL, to: backupURL)
+        restoreModifiedDate(from: fileURL, to: backupURL)
+    }
+
+    private func restoreModifiedDate(from sourceURL: URL, to targetURL: URL) {
+        guard let modifiedAt = fileModifiedAt(sourceURL) else { return }
+        try? fileManager.setAttributes([.modificationDate: modifiedAt], ofItemAtPath: targetURL.path)
+    }
+
+    private func pathsPointToSameFile(_ left: URL, _ right: URL) -> Bool {
+        if left.standardizedFileURL.path == right.standardizedFileURL.path {
+            return true
+        }
+        guard let leftResolved = try? left.resolvingSymlinksInPath().resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier,
+              let rightResolved = try? right.resolvingSymlinksInPath().resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
+        else {
+            return false
+        }
+        return String(describing: leftResolved) == String(describing: rightResolved)
+    }
+
+    private func sessionIndexLine(for session: CodexSessionThread) -> String? {
+        var object: [String: Any] = [
+            "id": session.threadID,
+            "thread_name": session.title,
+            "rollout_path": session.relativeRolloutPath
+        ]
+        if let workspacePath = session.workspacePath {
+            object["cwd"] = workspacePath
+        }
+        if let updatedAt = session.updatedAt {
+            object["updated_at"] = iso8601Formatter.string(from: updatedAt)
+        }
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
     }
 }
 
