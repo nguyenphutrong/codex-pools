@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build macOS app
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build Swift package
+        run: swift build
+
+      - name: Run tests if present
+        run: |
+          if [ -d Tests ]; then
+            swift test
+          else
+            echo "No Tests directory; skipping swift test."
+          fi
+
+      - name: Build app bundle
+        run: ./script/build_and_run.sh --build-only
+
+      - name: Validate app bundle
+        run: |
+          test -x dist/CodexManager.app/Contents/MacOS/CodexManager
+          test -f dist/CodexManager.app/Contents/Resources/CodexManager.icns
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/CodexManager.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' dist/CodexManager.app/Contents/Info.plist
+          codesign --verify --deep --strict --verbose=1 dist/CodexManager.app

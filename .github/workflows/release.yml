@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build release artifact
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME}"
+          fi
+
+          case "$version" in
+            v*) ;;
+            *) echo "Version must start with v, got: $version" >&2; exit 1 ;;
+          esac
+
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build app bundle
+        run: ./script/build_and_run.sh --build-only
+
+      - name: Validate app bundle
+        run: codesign --verify --deep --strict --verbose=1 dist/CodexManager.app
+
+      - name: Package app
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          artifact="CodexManager-${version}.zip"
+          ditto -c -k --keepParent dist/CodexManager.app "$artifact"
+          shasum -a 256 "$artifact" > "$artifact.sha256"
+
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          artifact="CodexManager-${version}.zip"
+
+          gh release create "$version" \
+            "$artifact" \
+            "$artifact.sha256" \
+            --draft \
+            --title "Codex Instance Manager $version" \
+            --notes "Draft release for $version. This artifact is ad-hoc signed for local use and is not notarized."
