@@ -44,6 +44,19 @@ struct CodexPoolsApp: App {
                     .disabled(!store.isRunning(selected))
                 }
             }
+
+            CommandMenu("Configuration") {
+                Button("Import Configuration") {
+                    store.selectConfigurationForImport()
+                }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+
+                Button("Export Configuration") {
+                    store.exportInstances()
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(store.instances.isEmpty)
+            }
         }
     }
 }
