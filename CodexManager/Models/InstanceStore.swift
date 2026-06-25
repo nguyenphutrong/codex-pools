@@ -4,12 +4,20 @@ import Foundation
 
 @MainActor
 final class InstanceStore: ObservableObject {
+    enum ImportMode {
+        case merge
+        case replace
+    }
+
     @Published private(set) var instances: [CodexInstance] = []
     @Published var selectedInstanceID: CodexInstance.ID?
     @Published var errorMessage: String?
+    @Published var pendingImportedInstances: [CodexInstance]?
     @Published private(set) var runningInstanceIDs: Set<CodexInstance.ID> = []
     @Published private var launchingInstanceIDs: Set<CodexInstance.ID> = []
 
+    private let exportService = ExportService()
+    private let importService = ImportService()
     private let launchService = LaunchService()
     private let fileManager: FileManager
     private let configURL: URL
@@ -192,6 +200,41 @@ final class InstanceStore: ObservableObject {
         launchingInstanceIDs.contains(instance.id)
     }
 
+    func exportInstances() {
+        do {
+            try exportService.export(instances: instances)
+        } catch {
+            errorMessage = "Could not export instances: \(error.localizedDescription)"
+        }
+    }
+
+    func selectConfigurationForImport() {
+        do {
+            pendingImportedInstances = try importService.selectInstances()
+        } catch {
+            errorMessage = "Could not import instances: \(error.localizedDescription)"
+        }
+    }
+
+    func importPendingInstances(mode: ImportMode) {
+        guard let importedInstances = pendingImportedInstances else { return }
+
+        switch mode {
+        case .merge:
+            merge(importedInstances)
+        case .replace:
+            instances = importedInstances
+        }
+
+        selectedInstanceID = importedInstances.first?.id ?? instances.first?.id
+        pendingImportedInstances = nil
+        save()
+    }
+
+    func cancelPendingImport() {
+        pendingImportedInstances = nil
+    }
+
     func isRunning(_ instance: CodexInstance) -> Bool {
         runningInstanceIDs.contains(instance.id)
     }
@@ -276,21 +319,18 @@ final class InstanceStore: ObservableObject {
         }
         return "\(prefix) \(index)"
     }
-}
 
-private extension JSONDecoder {
-    static var instanceDecoder: JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }
-}
+    private func merge(_ importedInstances: [CodexInstance]) {
+        var mergedInstances = instances
 
-private extension JSONEncoder {
-    static var instanceEncoder: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
+        for imported in importedInstances {
+            if let index = mergedInstances.firstIndex(where: { $0.id == imported.id }) {
+                mergedInstances[index] = imported
+            } else {
+                mergedInstances.append(imported)
+            }
+        }
+
+        instances = mergedInstances
     }
 }
