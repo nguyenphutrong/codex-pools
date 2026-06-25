@@ -28,6 +28,10 @@ let package = Package(
                 .linkedFramework("SwiftUI"),
                 .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
+        ),
+        .testTarget(
+            name: "CodexPoolsTests",
+            dependencies: ["CodexPools"]
         )
     ]
 )
