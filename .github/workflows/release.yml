@@ -48,20 +48,50 @@ jobs:
       - name: Package app
         run: |
           version="${{ steps.version.outputs.value }}"
-          artifact="CodexPools-${version}.zip"
-          ditto -c -k --keepParent "dist/Codex Pools.app" "$artifact"
-          shasum -a 256 "$artifact" > "$artifact.sha256"
+          zip_artifact="CodexPools-${version}.zip"
+          dmg_artifact="CodexPools-${version}.dmg"
 
-      - name: Create draft GitHub Release
+          ditto -c -k --keepParent "dist/Codex Pools.app" "$zip_artifact"
+
+          rm -rf dmg-root
+          mkdir -p dmg-root
+          cp -R "dist/Codex Pools.app" dmg-root/
+          ln -s /Applications dmg-root/Applications
+          hdiutil create \
+            -volname "Codex Pools" \
+            -srcfolder dmg-root \
+            -ov \
+            -format UDZO \
+            "$dmg_artifact"
+
+          shasum -a 256 "$dmg_artifact" "$zip_artifact" > SHA256SUMS.txt
+
+      - name: Write release notes
+        run: |
+          cat > release-notes.md <<'MARKDOWN'
+          ## Installation
+
+          Download the DMG or ZIP below.
+
+          > ⚠️ **Note**: The app is not signed with an Apple Developer certificate. If macOS blocks the app, run:
+          > ```bash
+          > xattr -cr "/Applications/Codex Pools.app"
+          > ```
+
+          This release is ad-hoc signed and is not notarized.
+          MARKDOWN
+
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${{ steps.version.outputs.value }}"
-          artifact="CodexPools-${version}.zip"
+          zip_artifact="CodexPools-${version}.zip"
+          dmg_artifact="CodexPools-${version}.dmg"
 
           gh release create "$version" \
-            "$artifact" \
-            "$artifact.sha256" \
-            --draft \
+            "$dmg_artifact" \
+            "$zip_artifact" \
+            SHA256SUMS.txt \
             --title "Codex Pools $version" \
-            --notes "Draft release for $version. This artifact is ad-hoc signed for local use and is not notarized."
+            --notes-file release-notes.md
