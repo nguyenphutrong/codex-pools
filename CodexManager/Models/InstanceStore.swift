@@ -93,10 +93,13 @@ final class InstanceStore: ObservableObject {
 
     func createInstance(from template: CodexTemplate) {
         let baseName = nextAvailableName(prefix: template.name)
-        let instance = CodexInstance(
+        var instance = CodexInstance(
             name: baseName,
-            codexHome: nextAvailableTemplateHomePath(for: template)
+            codexHome: nextAvailableTemplateHomePath(for: template),
+            extraEnvVars: template.extraEnvVars,
+            launchArgs: template.launchFlags
         )
+        instance.bundleStatus = launchService.bundleStatus(for: instance)
 
         instances.append(instance)
         selectedInstanceID = instance.id

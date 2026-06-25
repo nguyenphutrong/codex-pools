@@ -19,9 +19,10 @@ struct LaunchService {
         configuration.arguments = [
             // Local clones are re-signed, so Chromium Keychain ACL prompts can repeat.
             "--use-mock-keychain"
-        ]
+        ] + instance.launchArgs.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
         var environment = ProcessInfo.processInfo.environment
+        environment.merge(instance.extraEnvVars) { _, new in new }
         environment["CODEX_HOME"] = homePath
         environment["CODEX_INSTANCE_ID"] = instance.id.uuidString
         configuration.environment = environment
