@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 
 struct BundleCloneService {
@@ -18,9 +19,9 @@ struct BundleCloneService {
     }
 
     func prepareBundle(for instance: CodexInstance) throws -> URL {
-        guard fileManager.fileExists(atPath: sourceAppURL.path) else {
-            throw BundleCloneError.sourceAppMissing(sourceAppURL.path)
-        }
+        try preflightRootUser()
+        try preflightSourceApp()
+        try preflightTools(iconPath: instance.iconPath)
 
         let sourceFingerprint = try sourceFingerprint()
         let signingIdentity = signingIdentity()
@@ -39,22 +40,38 @@ struct BundleCloneService {
             throw BundleCloneError.instanceMustQuitBeforeRebuild(instance.managedAppName)
         }
 
-        let instanceDirectoryURL = instanceDirectoryURL(for: instance)
-        try removeItemIfPresent(at: instanceDirectoryURL)
+        try preflightWritableDirectory(appsRootURL)
+
+        let stagingDirectoryURL = stagingDirectoryURL(for: instance)
+        let stagingBundleURL = stagingDirectoryURL.appendingPathComponent(
+            instance.managedAppBundleName,
+            isDirectory: true
+        )
+        var shouldCleanStaging = true
+        defer {
+            if shouldCleanStaging {
+                try? removeItemIfPresent(at: stagingDirectoryURL)
+            }
+        }
+
+        try removeItemIfPresent(at: stagingDirectoryURL)
         try fileManager.createDirectory(
-            at: instanceDirectoryURL,
+            at: stagingDirectoryURL,
             withIntermediateDirectories: true
         )
 
-        try fileManager.copyItem(at: sourceAppURL, to: destinationURL)
+        try fileManager.copyItem(at: sourceAppURL, to: stagingBundleURL)
         try patchMainInfoPlist(
             for: instance,
-            appURL: destinationURL,
+            appURL: stagingBundleURL,
             sourceFingerprint: sourceFingerprint,
             signingIdentity: signingIdentity
         )
-        try patchHelperBundleIdentifiers(appURL: destinationURL, bundleIdentifier: instance.managedBundleIdentifier)
-        try signBundle(at: destinationURL, signingIdentity: signingIdentity)
+        try patchHelperBundleIdentifiers(appURL: stagingBundleURL, bundleIdentifier: instance.managedBundleIdentifier)
+        try signBundle(at: stagingBundleURL, signingIdentity: signingIdentity)
+        try verifyBundle(at: stagingBundleURL)
+        try replacePreparedBundle(at: stagingDirectoryURL, for: instance)
+        shouldCleanStaging = false
 
         return destinationURL
     }
@@ -237,6 +254,13 @@ struct BundleCloneService {
         try run("/usr/bin/codesign", arguments: ["--force", "--deep", "--sign", signingIdentity, appURL.path])
     }
 
+    private func verifyBundle(at appURL: URL) throws {
+        try run(
+            "/usr/bin/codesign",
+            arguments: ["--verify", "--deep", "--strict", "--verbose=1", appURL.path]
+        )
+    }
+
     private func sourceFingerprint() throws -> SourceFingerprint {
         let infoURL = infoPlistURL(for: sourceAppURL)
         guard let info = NSDictionary(contentsOf: infoURL),
@@ -329,6 +353,98 @@ struct BundleCloneService {
         }
     }
 
+    private func preflightRootUser() throws {
+        guard getuid() != 0 else {
+            throw BundleCloneError.runningAsRoot
+        }
+    }
+
+    private func preflightSourceApp() throws {
+        guard fileManager.fileExists(atPath: sourceAppURL.path) else {
+            throw BundleCloneError.sourceAppMissing(sourceAppURL.path)
+        }
+
+        let infoURL = infoPlistURL(for: sourceAppURL)
+        guard fileManager.isReadableFile(atPath: infoURL.path),
+              let info = NSDictionary(contentsOf: infoURL),
+              let executableName = info["CFBundleExecutable"] as? String
+        else {
+            throw BundleCloneError.cannotReadSource(infoURL.path)
+        }
+
+        let executableURL = sourceAppURL
+            .appendingPathComponent("Contents/MacOS", isDirectory: true)
+            .appendingPathComponent(executableName)
+        guard fileManager.isReadableFile(atPath: executableURL.path) else {
+            throw BundleCloneError.cannotReadSource(executableURL.path)
+        }
+    }
+
+    private func preflightTools(iconPath: String?) throws {
+        try requireExecutableTool("/usr/bin/codesign")
+
+        guard let iconPath,
+              URL(fileURLWithPath: iconPath).pathExtension.lowercased() != "icns"
+        else {
+            return
+        }
+
+        try requireExecutableTool("/usr/bin/iconutil")
+    }
+
+    private func requireExecutableTool(_ path: String) throws {
+        guard fileManager.isExecutableFile(atPath: path) else {
+            throw BundleCloneError.missingTool(path)
+        }
+    }
+
+    private func preflightWritableDirectory(_ url: URL) throws {
+        do {
+            try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+            let probeURL = url.appendingPathComponent(".codex-manager-write-probe-\(UUID().uuidString)")
+            guard fileManager.createFile(atPath: probeURL.path, contents: Data()) else {
+                throw BundleCloneError.cannotWriteDirectory(url.path, "Could not create write probe.")
+            }
+            try removeItemIfPresent(at: probeURL)
+        } catch let error as BundleCloneError {
+            throw error
+        } catch {
+            throw BundleCloneError.cannotWriteDirectory(url.path, error.localizedDescription)
+        }
+    }
+
+    private func replacePreparedBundle(at stagingDirectoryURL: URL, for instance: CodexInstance) throws {
+        let finalDirectoryURL = instanceDirectoryURL(for: instance)
+        let backupDirectoryURL = appsRootURL.appendingPathComponent(
+            ".backup-\(instance.id.uuidString)-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        var movedExistingBundle = false
+
+        do {
+            try removeItemIfPresent(at: backupDirectoryURL)
+
+            if fileManager.fileExists(atPath: finalDirectoryURL.path) {
+                try fileManager.moveItem(at: finalDirectoryURL, to: backupDirectoryURL)
+                movedExistingBundle = true
+            }
+
+            try fileManager.moveItem(at: stagingDirectoryURL, to: finalDirectoryURL)
+
+            if movedExistingBundle {
+                try? removeItemIfPresent(at: backupDirectoryURL)
+            }
+        } catch {
+            if movedExistingBundle,
+               fileManager.fileExists(atPath: backupDirectoryURL.path),
+               !fileManager.fileExists(atPath: finalDirectoryURL.path) {
+                try? fileManager.moveItem(at: backupDirectoryURL, to: finalDirectoryURL)
+            }
+
+            throw BundleCloneError.replaceFailed(instance.managedAppName, error.localizedDescription)
+        }
+    }
+
     private func run(_ executablePath: String, arguments: [String]) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
@@ -363,6 +479,12 @@ struct BundleCloneService {
         appsRootURL.appendingPathComponent(instance.id.uuidString, isDirectory: true)
     }
 
+    private func stagingDirectoryURL(for instance: CodexInstance) -> URL {
+        appsRootURL
+            .appendingPathComponent(".staging", isDirectory: true)
+            .appendingPathComponent("\(instance.id.uuidString)-\(UUID().uuidString)", isDirectory: true)
+    }
+
     private func infoPlistURL(for appURL: URL) -> URL {
         appURL
             .appendingPathComponent("Contents", isDirectory: true)
@@ -390,26 +512,41 @@ private enum MetadataKey {
 
 private enum BundleCloneError: LocalizedError {
     case sourceAppMissing(String)
+    case cannotReadSource(String)
     case invalidInfoPlist(String)
     case couldNotWriteInfoPlist(String)
     case invalidIcon(String)
+    case missingTool(String)
+    case cannotWriteDirectory(String, String)
+    case replaceFailed(String, String)
     case commandFailed(String, String)
     case instanceMustQuitBeforeRebuild(String)
+    case runningAsRoot
 
     var errorDescription: String? {
         switch self {
         case .sourceAppMissing(let path):
             return "Codex source app was not found at \(path)."
+        case .cannotReadSource(let path):
+            return "Codex source app is not readable at \(path)."
         case .invalidInfoPlist(let path):
             return "Could not read Info.plist at \(path)."
         case .couldNotWriteInfoPlist(let path):
             return "Could not write Info.plist at \(path)."
         case .invalidIcon(let path):
             return "Could not convert icon at \(path)."
+        case .missingTool(let path):
+            return "Required macOS tool is missing or not executable at \(path)."
+        case .cannotWriteDirectory(let path, let reason):
+            return "Cannot write managed app bundles under \(path). \(reason)"
+        case .replaceFailed(let name, let reason):
+            return "Could not replace the managed app bundle for \(name). \(reason)"
         case .commandFailed(let command, let output):
             return "\(command) failed. \(output)"
         case .instanceMustQuitBeforeRebuild(let name):
             return "\(name) is running. Quit it before rebuilding its managed app bundle."
+        case .runningAsRoot:
+            return "Do not run Codex Instance Manager as root. Launch it as your normal macOS user so instances stay under your user profile."
         }
     }
 }
