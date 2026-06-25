@@ -74,6 +74,18 @@ final class InstanceStore: ObservableObject {
         save()
     }
 
+    func createInstance(from template: CodexTemplate) {
+        let baseName = nextAvailableName(prefix: template.name)
+        let instance = CodexInstance(
+            name: baseName,
+            codexHome: nextAvailableTemplateHomePath(for: template)
+        )
+
+        instances.append(instance)
+        selectedInstanceID = instance.id
+        save()
+    }
+
     func loadTemplates() {
         do {
             guard fileManager.fileExists(atPath: templatesURL.path) else {
@@ -235,6 +247,24 @@ final class InstanceStore: ObservableObject {
             index += 1
         }
         return "\(prefix) \(index)"
+    }
+
+    private func nextAvailableTemplateHomePath(for template: CodexTemplate) -> String {
+        let home = fileManager.homeDirectoryForCurrentUser
+        let codexDirectory = home.appendingPathComponent(".codex")
+        let basePath = codexDirectory.appendingPathComponent(template.safeHomePathSuffix).path
+        let existingHomes = Set(instances.map(\.codexHome))
+
+        if !existingHomes.contains(basePath) {
+            return basePath
+        }
+
+        var index = 2
+        while existingHomes.contains("\(basePath)-\(index)") {
+            index += 1
+        }
+
+        return "\(basePath)-\(index)"
     }
 }
 

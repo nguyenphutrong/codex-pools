@@ -26,6 +26,26 @@ struct CodexTemplate: Identifiable, Codable, Equatable {
 }
 
 extension CodexTemplate {
+    var safeHomePathSuffix: String {
+        let slug = homePathSuffix
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+
+        if !slug.isEmpty {
+            return slug
+        }
+
+        let nameSlug = name
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+
+        return nameSlug.isEmpty ? "codex-template" : nameSlug
+    }
+
     static let builtInTemplates: [CodexTemplate] = [
         CodexTemplate(
             id: UUID(uuidString: "4A50A487-0118-43B4-8B01-C4ACBD5AF1E5")!,
