@@ -1,4 +1,4 @@
-import AppKit
+import Combine
 import Foundation
 
 @MainActor

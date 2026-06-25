@@ -24,6 +24,7 @@ struct BundleCloneService {
         try preflightTools(iconPath: instance.iconPath)
 
         let sourceFingerprint = try sourceFingerprint()
+        let iconFingerprint = iconFingerprint(for: instance.iconPath)
         let signingIdentity = signingIdentity()
         let destinationURL = bundleURL(for: instance)
 
@@ -31,6 +32,7 @@ struct BundleCloneService {
             instance: instance,
             destinationURL: destinationURL,
             sourceFingerprint: sourceFingerprint,
+            iconFingerprint: iconFingerprint,
             signingIdentity: signingIdentity
         ) else {
             return destinationURL
@@ -65,6 +67,7 @@ struct BundleCloneService {
             for: instance,
             appURL: stagingBundleURL,
             sourceFingerprint: sourceFingerprint,
+            iconFingerprint: iconFingerprint,
             signingIdentity: signingIdentity
         )
         try patchHelperBundleIdentifiers(appURL: stagingBundleURL, bundleIdentifier: instance.managedBundleIdentifier)
@@ -92,6 +95,7 @@ struct BundleCloneService {
         instance: CodexInstance,
         destinationURL: URL,
         sourceFingerprint: SourceFingerprint,
+        iconFingerprint: String,
         signingIdentity: String
     ) -> Bool {
         guard fileManager.fileExists(atPath: destinationURL.path),
@@ -100,13 +104,13 @@ struct BundleCloneService {
             return true
         }
 
-        return info[MetadataKey.schemaVersion] as? String != CloneSchema.current ||
+        return info[MetadataKey.schemaVersion] as? String != CloneMetadata.schemaVersion ||
             info[MetadataKey.instanceID] as? String != instance.id.uuidString ||
             info[MetadataKey.sourceBundleIdentifier] as? String != sourceFingerprint.bundleIdentifier ||
             info[MetadataKey.sourceShortVersion] as? String != sourceFingerprint.shortVersion ||
             info[MetadataKey.sourceBuildVersion] as? String != sourceFingerprint.buildVersion ||
             info[MetadataKey.sourceExecutableModifiedAt] as? String != sourceFingerprint.executableModifiedAt ||
-            info[MetadataKey.iconFingerprint] as? String != iconFingerprint(for: instance.iconPath) ||
+            info[MetadataKey.iconFingerprint] as? String != iconFingerprint ||
             info[MetadataKey.signingIdentity] as? String != signingIdentity ||
             info["CFBundleIdentifier"] as? String != instance.managedBundleIdentifier ||
             info["CFBundleDisplayName"] as? String != instance.managedAppName
@@ -116,6 +120,7 @@ struct BundleCloneService {
         for instance: CodexInstance,
         appURL: URL,
         sourceFingerprint: SourceFingerprint,
+        iconFingerprint: String,
         signingIdentity: String
     ) throws {
         let infoURL = infoPlistURL(for: appURL)
@@ -132,18 +137,22 @@ struct BundleCloneService {
         info["SUAllowsAutomaticUpdates"] = false
         info.removeObject(forKey: "NSDockTilePlugIn")
 
-        if let iconFile = try installIcon(from: instance.iconPath, into: appURL) {
+        if let iconFile = try installIcon(
+            from: instance.iconPath,
+            iconFingerprint: iconFingerprint,
+            into: appURL
+        ) {
             info["CFBundleIconFile"] = iconFile
             info["CFBundleIconName"] = URL(fileURLWithPath: iconFile).deletingPathExtension().lastPathComponent
         }
 
-        info[MetadataKey.schemaVersion] = CloneSchema.current
+        info[MetadataKey.schemaVersion] = CloneMetadata.schemaVersion
         info[MetadataKey.instanceID] = instance.id.uuidString
         info[MetadataKey.sourceBundleIdentifier] = sourceFingerprint.bundleIdentifier
         info[MetadataKey.sourceShortVersion] = sourceFingerprint.shortVersion
         info[MetadataKey.sourceBuildVersion] = sourceFingerprint.buildVersion
         info[MetadataKey.sourceExecutableModifiedAt] = sourceFingerprint.executableModifiedAt
-        info[MetadataKey.iconFingerprint] = iconFingerprint(for: instance.iconPath)
+        info[MetadataKey.iconFingerprint] = iconFingerprint
         info[MetadataKey.signingIdentity] = signingIdentity
 
         guard info.write(to: infoURL, atomically: true) else {
@@ -165,12 +174,12 @@ struct BundleCloneService {
             guard infoURL != infoPlistURL(for: appURL),
                   let info = NSMutableDictionary(contentsOf: infoURL),
                   let existingIdentifier = info["CFBundleIdentifier"] as? String,
-                  existingIdentifier.hasPrefix("com.openai.codex")
+                  existingIdentifier.hasPrefix(CloneMetadata.sourceBundleIdentifierPrefix)
             else {
                 continue
             }
 
-            let suffix = String(existingIdentifier.dropFirst("com.openai.codex".count))
+            let suffix = String(existingIdentifier.dropFirst(CloneMetadata.sourceBundleIdentifierPrefix.count))
             info["CFBundleIdentifier"] = "\(bundleIdentifier)\(suffix)"
 
             guard info.write(to: infoURL, atomically: true) else {
@@ -188,7 +197,11 @@ struct BundleCloneService {
         try removeItemIfPresent(at: pluginURL)
     }
 
-    private func installIcon(from iconPath: String?, into appURL: URL) throws -> String? {
+    private func installIcon(
+        from iconPath: String?,
+        iconFingerprint: String,
+        into appURL: URL
+    ) throws -> String? {
         guard let iconPath else { return nil }
 
         let sourceURL = URL(fileURLWithPath: NSString(string: iconPath).expandingTildeInPath)
@@ -198,7 +211,7 @@ struct BundleCloneService {
         let resourcesURL = appURL
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Resources", isDirectory: true)
-        let iconFileName = "codex-manager-instance-\(stableHash(iconFingerprint(for: iconPath))).icns"
+        let iconFileName = "\(IconResource.managedIconPrefix)-\(stableHash(iconFingerprint)).icns"
         let destinationURL = resourcesURL.appendingPathComponent(iconFileName)
 
         try removeItemIfPresent(at: destinationURL)
@@ -212,10 +225,6 @@ struct BundleCloneService {
         try installRuntimeIcons(from: image, icnsURL: destinationURL, resourcesURL: resourcesURL)
 
         return iconFileName
-    }
-
-    private func createICNS(from sourceURL: URL, at destinationURL: URL) throws {
-        try createICNS(from: iconImage(at: sourceURL), at: destinationURL)
     }
 
     private func createICNS(from image: NSImage, at destinationURL: URL) throws {
@@ -247,14 +256,14 @@ struct BundleCloneService {
     }
 
     private func installRuntimeIcons(from image: NSImage, icnsURL: URL, resourcesURL: URL) throws {
-        for fileName in ["app.icns", "electron.icns", "icon.icns"] {
+        for fileName in IconResource.icnsFileNames {
             let destinationURL = resourcesURL.appendingPathComponent(fileName)
             try removeItemIfPresent(at: destinationURL)
             try fileManager.copyItem(at: icnsURL, to: destinationURL)
         }
 
         let pngData = try pngRepresentation(of: image, pixelSize: 1024)
-        for relativePath in ["icon.png", "default_app/icon.png", "icon-codex-dark.png", "icon-codex-light.png"] {
+        for relativePath in IconResource.pngRelativePaths {
             let destinationURL = resourcesURL.appendingPathComponent(relativePath)
             guard fileManager.fileExists(atPath: destinationURL.deletingLastPathComponent().path) else {
                 continue
@@ -561,8 +570,20 @@ private struct SourceFingerprint {
     let executableModifiedAt: String
 }
 
-private enum CloneSchema {
-    static let current = "4"
+private enum CloneMetadata {
+    static let schemaVersion = "4"
+    static let sourceBundleIdentifierPrefix = "com.openai.codex"
+}
+
+private enum IconResource {
+    static let managedIconPrefix = "codex-manager-instance"
+    static let icnsFileNames = ["app.icns", "electron.icns", "icon.icns"]
+    static let pngRelativePaths = [
+        "icon.png",
+        "default_app/icon.png",
+        "icon-codex-dark.png",
+        "icon-codex-light.png"
+    ]
 }
 
 private enum MetadataKey {
