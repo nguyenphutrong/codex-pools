@@ -170,6 +170,24 @@ final class InstanceStore: ObservableObject {
         }
     }
 
+    func quit(_ instance: CodexInstance) {
+        do {
+            try launchService.quit(instance: instance)
+            refreshRunningInstances()
+        } catch {
+            errorMessage = "Could not quit Codex: \(error.localizedDescription)"
+        }
+    }
+
+    func restart(_ instance: CodexInstance) async {
+        guard !isLaunching(instance) else { return }
+
+        quit(instance)
+        await waitUntilNotRunning(instance)
+        guard !isRunning(instance) else { return }
+        await launch(instance)
+    }
+
     func isLaunching(_ instance: CodexInstance) -> Bool {
         launchingInstanceIDs.contains(instance.id)
     }
@@ -212,6 +230,17 @@ final class InstanceStore: ObservableObject {
 
         if didChange {
             save()
+        }
+    }
+
+    private func waitUntilNotRunning(_ instance: CodexInstance) async {
+        for _ in 0..<20 {
+            refreshRunningInstances()
+            if !isRunning(instance) {
+                return
+            }
+
+            try? await Task.sleep(nanoseconds: 250_000_000)
         }
     }
 
