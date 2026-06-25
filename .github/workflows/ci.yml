@@ -35,8 +35,8 @@ jobs:
 
       - name: Validate app bundle
         run: |
-          test -x dist/CodexManager.app/Contents/MacOS/CodexManager
-          test -f dist/CodexManager.app/Contents/Resources/CodexManager.icns
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/CodexManager.app/Contents/Info.plist
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' dist/CodexManager.app/Contents/Info.plist
-          codesign --verify --deep --strict --verbose=1 dist/CodexManager.app
+          test -x "dist/Codex Pools.app/Contents/MacOS/CodexPools"
+          test -f "dist/Codex Pools.app/Contents/Resources/CodexPools.icns"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "dist/Codex Pools.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "dist/Codex Pools.app/Contents/Info.plist"
+          codesign --verify --deep --strict --verbose=1 "dist/Codex Pools.app"

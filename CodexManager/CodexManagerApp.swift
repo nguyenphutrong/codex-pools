@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct CodexManagerApp: App {
+struct CodexPoolsApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = InstanceStore()
 

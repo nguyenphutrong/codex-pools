@@ -14,7 +14,7 @@ struct BundleCloneService {
         self.appsRootURL = home
             .appendingPathComponent("Library")
             .appendingPathComponent("Application Support")
-            .appendingPathComponent("Codex Instance Manager")
+            .appendingPathComponent("Codex Pools")
             .appendingPathComponent("Apps", isDirectory: true)
     }
 
@@ -464,7 +464,7 @@ struct BundleCloneService {
     private func preflightWritableDirectory(_ url: URL) throws {
         do {
             try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
-            let probeURL = url.appendingPathComponent(".codex-manager-write-probe-\(UUID().uuidString)")
+            let probeURL = url.appendingPathComponent(".codex-pools-write-probe-\(UUID().uuidString)")
             guard fileManager.createFile(atPath: probeURL.path, contents: Data()) else {
                 throw BundleCloneError.cannotWriteDirectory(url.path, "Could not create write probe.")
             }
@@ -576,7 +576,7 @@ private enum CloneMetadata {
 }
 
 private enum IconResource {
-    static let managedIconPrefix = "codex-manager-instance"
+    static let managedIconPrefix = "codex-pools-instance"
     static let icnsFileNames = ["app.icns", "electron.icns", "icon.icns"]
     static let pngRelativePaths = [
         "icon.png",
@@ -587,14 +587,14 @@ private enum IconResource {
 }
 
 private enum MetadataKey {
-    static let schemaVersion = "CodexManagerCloneSchemaVersion"
-    static let instanceID = "CodexManagerInstanceID"
-    static let sourceBundleIdentifier = "CodexManagerSourceBundleIdentifier"
-    static let sourceShortVersion = "CodexManagerSourceShortVersion"
-    static let sourceBuildVersion = "CodexManagerSourceBuildVersion"
-    static let sourceExecutableModifiedAt = "CodexManagerSourceExecutableModifiedAt"
-    static let iconFingerprint = "CodexManagerIconFingerprint"
-    static let signingIdentity = "CodexManagerSigningIdentity"
+    static let schemaVersion = "CodexPoolsCloneSchemaVersion"
+    static let instanceID = "CodexPoolsInstanceID"
+    static let sourceBundleIdentifier = "CodexPoolsSourceBundleIdentifier"
+    static let sourceShortVersion = "CodexPoolsSourceShortVersion"
+    static let sourceBuildVersion = "CodexPoolsSourceBuildVersion"
+    static let sourceExecutableModifiedAt = "CodexPoolsSourceExecutableModifiedAt"
+    static let iconFingerprint = "CodexPoolsIconFingerprint"
+    static let signingIdentity = "CodexPoolsSigningIdentity"
 }
 
 private enum BundleCloneError: LocalizedError {
@@ -633,7 +633,7 @@ private enum BundleCloneError: LocalizedError {
         case .instanceMustQuitBeforeRebuild(let name):
             return "\(name) is running. Quit it before rebuilding its managed app bundle."
         case .runningAsRoot:
-            return "Do not run Codex Instance Manager as root. Launch it as your normal macOS user so instances stay under your user profile."
+            return "Do not run Codex Pools as root. Launch it as your normal macOS user so instances stay under your user profile."
         }
     }
 }

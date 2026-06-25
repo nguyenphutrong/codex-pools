@@ -39,12 +39,12 @@ extension CodexInstance {
     }
 
     var managedBundleIdentifier: String {
-        "com.nguyenphutrong.codexmanager.instance.\(id.uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
+        "com.nguyenphutrong.codexpools.instance.\(id.uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
     }
 
     var managedAppName: String {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedName.isEmpty ? "Codex Instance" : trimmedName
+        return trimmedName.isEmpty ? "Codex Pool" : trimmedName
     }
 
     var managedAppBundleName: String {
@@ -57,6 +57,6 @@ extension CodexInstance {
             .joined(separator: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return "\(sanitized.isEmpty ? "Codex Instance" : sanitized).app"
+        return "\(sanitized.isEmpty ? "Codex Pool" : sanitized).app"
     }
 }

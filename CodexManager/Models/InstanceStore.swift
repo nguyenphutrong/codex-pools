@@ -24,13 +24,13 @@ final class InstanceStore: ObservableObject {
         let home = fileManager.homeDirectoryForCurrentUser
         self.configURL = home
             .appendingPathComponent(".config")
-            .appendingPathComponent("codex-manager")
+            .appendingPathComponent("codex-pools")
             .appendingPathComponent("instances.json")
 
         self.iconDirectoryURL = home
             .appendingPathComponent("Library")
             .appendingPathComponent("Application Support")
-            .appendingPathComponent("Codex Instance Manager")
+            .appendingPathComponent("Codex Pools")
             .appendingPathComponent("Icons")
 
         load()

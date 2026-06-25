@@ -43,13 +43,13 @@ jobs:
         run: ./script/build_and_run.sh --build-only
 
       - name: Validate app bundle
-        run: codesign --verify --deep --strict --verbose=1 dist/CodexManager.app
+        run: codesign --verify --deep --strict --verbose=1 "dist/Codex Pools.app"
 
       - name: Package app
         run: |
           version="${{ steps.version.outputs.value }}"
-          artifact="CodexManager-${version}.zip"
-          ditto -c -k --keepParent dist/CodexManager.app "$artifact"
+          artifact="CodexPools-${version}.zip"
+          ditto -c -k --keepParent "dist/Codex Pools.app" "$artifact"
           shasum -a 256 "$artifact" > "$artifact.sha256"
 
       - name: Create draft GitHub Release
@@ -57,11 +57,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${{ steps.version.outputs.value }}"
-          artifact="CodexManager-${version}.zip"
+          artifact="CodexPools-${version}.zip"
 
           gh release create "$version" \
             "$artifact" \
             "$artifact.sha256" \
             --draft \
-            --title "Codex Instance Manager $version" \
+            --title "Codex Pools $version" \
             --notes "Draft release for $version. This artifact is ad-hoc signed for local use and is not notarized."

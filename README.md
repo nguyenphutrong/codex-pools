@@ -1,4 +1,4 @@
-# Codex Instance Manager
+# Codex Pools
 
 A lightweight native macOS utility for managing multiple isolated instances of
 `/Applications/Codex.app`.
@@ -10,7 +10,7 @@ sharing the same home directory.
 ## Features
 
 - Create, edit, duplicate, and delete Codex instances.
-- Persist instance configuration in `~/.config/codex-manager/instances.json`.
+- Persist instance configuration in `~/.config/codex-pools/instances.json`.
 - Launch each instance with its own `CODEX_HOME`.
 - Clone `/Applications/Codex.app` into per-instance app bundles with unique
   bundle identifiers.
@@ -32,7 +32,7 @@ sharing the same home directory.
 The script builds a local development app bundle at:
 
 ```text
-dist/CodexManager.app
+dist/Codex Pools.app
 ```
 
 Useful modes:
@@ -46,22 +46,22 @@ Useful modes:
 
 ## How It Works
 
-Codex Instance Manager stores instance metadata in:
+Codex Pools stores instance metadata in:
 
 ```text
-~/.config/codex-manager/instances.json
+~/.config/codex-pools/instances.json
 ```
 
 Custom icons are copied into:
 
 ```text
-~/Library/Application Support/Codex Instance Manager/Icons
+~/Library/Application Support/Codex Pools/Icons
 ```
 
 Managed Codex app bundles are created under:
 
 ```text
-~/Library/Application Support/Codex Instance Manager/Apps
+~/Library/Application Support/Codex Pools/Apps
 ```
 
 Launching an instance uses `NSWorkspace.OpenConfiguration` with an injected
@@ -88,7 +88,7 @@ identity and notarization credentials.
 GitHub Actions workflows are included:
 
 - `CI`: builds the Swift package and validates the generated macOS app bundle.
-- `Release`: on `v*` tags, builds `dist/CodexManager.app`, zips it, writes a
+- `Release`: on `v*` tags, builds `dist/Codex Pools.app`, zips it, writes a
   SHA-256 checksum, and creates a draft GitHub Release.
 
 Create a release draft with:

@@ -14,7 +14,7 @@ struct ContentView: View {
                 EmptyInstanceView()
             }
         }
-        .alert("Codex Instance Manager", isPresented: errorBinding) {
+        .alert("Codex Pools", isPresented: errorBinding) {
             Button("OK") {
                 store.errorMessage = nil
             }

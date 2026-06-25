@@ -3,16 +3,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "CodexManager",
+    name: "CodexPools",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "CodexManager", targets: ["CodexManager"])
+        .executable(name: "CodexPools", targets: ["CodexPools"])
     ],
     targets: [
         .executableTarget(
-            name: "CodexManager",
+            name: "CodexPools",
             path: "CodexManager",
             resources: [
                 .process("Resources")
