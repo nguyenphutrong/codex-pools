@@ -2,10 +2,11 @@ import AppKit
 import Foundation
 
 struct LaunchService {
-    private let codexAppPath = "/Applications/Codex.app"
+    private let bundleCloneService = BundleCloneService()
 
     func launch(instance: CodexInstance) async throws {
         let homePath = NSString(string: instance.codexHome).expandingTildeInPath
+        let appURL = try bundleCloneService.prepareBundle(for: instance)
 
         try FileManager.default.createDirectory(
             at: URL(fileURLWithPath: homePath, isDirectory: true),
@@ -18,11 +19,12 @@ struct LaunchService {
 
         var environment = ProcessInfo.processInfo.environment
         environment["CODEX_HOME"] = homePath
+        environment["CODEX_INSTANCE_ID"] = instance.id.uuidString
         configuration.environment = environment
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             NSWorkspace.shared.openApplication(
-                at: URL(fileURLWithPath: codexAppPath),
+                at: appURL,
                 configuration: configuration
             ) { _, error in
                 if let error {
@@ -32,5 +34,9 @@ struct LaunchService {
                 }
             }
         }
+    }
+
+    func removeManagedBundle(for instance: CodexInstance) throws {
+        try bundleCloneService.removeBundle(for: instance)
     }
 }

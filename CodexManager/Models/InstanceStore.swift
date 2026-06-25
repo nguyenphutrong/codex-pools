@@ -78,6 +78,7 @@ final class InstanceStore: ObservableObject {
             if deleteHomeDirectory {
                 try removeHomeDirectoryIfPresent(instance.codexHome)
             }
+            try launchService.removeManagedBundle(for: instance)
 
             instances.removeAll { $0.id == instance.id }
             selectedInstanceID = instances.first?.id

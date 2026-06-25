@@ -37,4 +37,26 @@ extension CodexInstance {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent(".codex").appendingPathComponent(safeSlug).path
     }
+
+    var managedBundleIdentifier: String {
+        "com.nguyenphutrong.codexmanager.instance.\(id.uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
+    }
+
+    var managedAppName: String {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedName.isEmpty ? "Codex Instance" : trimmedName
+    }
+
+    var managedAppBundleName: String {
+        let invalidCharacters = CharacterSet(charactersIn: "/:")
+            .union(.newlines)
+            .union(.controlCharacters)
+
+        let sanitized = managedAppName
+            .components(separatedBy: invalidCharacters)
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return "\(sanitized.isEmpty ? "Codex Instance" : sanitized).app"
+    }
 }
