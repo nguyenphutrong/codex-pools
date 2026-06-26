@@ -20,6 +20,7 @@ pub fn scan_instance(
     codex_home: PathBuf,
     cache_db: Option<PathBuf>,
 ) -> Result<AnalyticsScanResult> {
+    emit_progress("discovering", 0, 0, 0, 0, 0);
     let cache = AnalyticsCache::open(cache_db)?;
     let index = read_session_index(&codex_home);
     let mut candidates = Vec::new();
@@ -64,16 +65,33 @@ pub fn scan_instance(
         _ => right.file_size_bytes.cmp(&left.file_size_bytes),
     });
 
+    emit_progress("analyzing", 0, candidates.len(), 0, 0, skipped_file_count);
     let mut sessions = Vec::new();
     let mut live_keys = Vec::new();
+    let total_candidates = candidates.len();
+    let mut scanned_count = 0;
+    let mut cache_hit_count = 0;
+    let mut parsed_count = 0;
     for candidate in candidates {
+        scanned_count += 1;
         live_keys.push(candidate.cache_key.clone());
         if let Some(session) = cache.get_session(
             &candidate.cache_key,
             candidate.file_modified_at_ms,
             candidate.file_size_bytes,
         )? {
+            cache_hit_count += 1;
             sessions.push(session);
+            if scanned_count == total_candidates || scanned_count % 50 == 0 {
+                emit_progress(
+                    "analyzing",
+                    scanned_count,
+                    total_candidates,
+                    cache_hit_count,
+                    parsed_count,
+                    skipped_file_count,
+                );
+            }
             continue;
         }
 
@@ -88,17 +106,58 @@ pub fn scan_instance(
                     candidate.file_size_bytes,
                     &session,
                 )?;
+                parsed_count += 1;
                 sessions.push(session);
             }
             None => skipped_file_count += 1,
         }
+        if scanned_count == total_candidates || scanned_count % 50 == 0 {
+            emit_progress(
+                "analyzing",
+                scanned_count,
+                total_candidates,
+                cache_hit_count,
+                parsed_count,
+                skipped_file_count,
+            );
+        }
     }
     cache.prune_instance(&instance_id.to_string(), &live_keys)?;
+    emit_progress(
+        "complete",
+        scanned_count,
+        total_candidates,
+        cache_hit_count,
+        parsed_count,
+        skipped_file_count,
+    );
 
     Ok(AnalyticsScanResult {
         snapshot: build_snapshot(sessions),
         skipped_file_count,
     })
+}
+
+fn emit_progress(
+    phase: &str,
+    scanned: usize,
+    total: usize,
+    cache_hits: usize,
+    parsed: usize,
+    skipped: i64,
+) {
+    eprintln!(
+        "{}",
+        serde_json::json!({
+            "type": "progress",
+            "phase": phase,
+            "scanned": scanned,
+            "total": total,
+            "cacheHits": cache_hits,
+            "parsed": parsed,
+            "skipped": skipped
+        })
+    );
 }
 
 #[derive(Clone, Copy)]

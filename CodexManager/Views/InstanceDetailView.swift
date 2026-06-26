@@ -25,6 +25,7 @@ struct InstanceDetailView: View {
             AnalyticsContent(
                 snapshot: store.analyticsResult(for: [draft]).snapshot,
                 isScanning: store.isScanningAnalytics(for: [draft]),
+                statusMessage: store.analyticsStatusMessage,
                 selection: $analyticsSection,
                 projectFilter: $analyticsProjectFilter,
                 title: "Codex Analytics",

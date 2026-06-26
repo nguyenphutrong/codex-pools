@@ -365,10 +365,20 @@ final class InstanceStore: ObservableObject {
         analyticsScanKey = scanKey
         scanningAnalyticsKeys.insert(scanKey)
         isScanningAnalytics = true
-        analyticsStatusMessage = nil
+        analyticsStatusMessage = "Starting Codex analytics scan..."
         analyticsScanTask = Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) {
-                (try? analyticsCLIService.scanAnalytics(for: instancesSnapshot))
+                (try? analyticsCLIService.scanAnalytics(for: instancesSnapshot) { message in
+                    Task { @MainActor [weak self] in
+                        guard let self,
+                              generation == self.analyticsScanGeneration,
+                              self.scanningAnalyticsKeys.contains(scanKey)
+                        else {
+                            return
+                        }
+                        self.analyticsStatusMessage = message
+                    }
+                })
                     ?? CodexSessionService().scanAnalytics(for: instancesSnapshot)
             }.value
 

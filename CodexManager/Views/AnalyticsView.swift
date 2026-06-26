@@ -10,6 +10,7 @@ struct AnalyticsView: View {
         AnalyticsContent(
             snapshot: store.analyticsResult().snapshot,
             isScanning: store.isScanningAnalytics(),
+            statusMessage: store.analyticsStatusMessage,
             selection: $selection,
             projectFilter: $projectFilter,
             title: "Analytics",
@@ -28,6 +29,7 @@ struct AnalyticsView: View {
 struct AnalyticsContent: View {
     let snapshot: CodexAnalyticsSnapshot
     let isScanning: Bool
+    let statusMessage: String?
     @Binding var selection: AnalyticsSection
     @Binding var projectFilter: String?
     var title: String
@@ -79,7 +81,7 @@ struct AnalyticsContent: View {
     @ViewBuilder
     private var detail: some View {
         if isScanning && snapshot.sessions.isEmpty {
-            AnalyticsLoadingView()
+            AnalyticsLoadingView(statusMessage: statusMessage)
         } else if snapshot.sessions.isEmpty {
             AnalyticsEmptyView()
         } else {
@@ -595,14 +597,18 @@ private struct AnalyticsBarRow: View {
 }
 
 private struct AnalyticsLoadingView: View {
+    var statusMessage: String?
+
     var body: some View {
         VStack(spacing: 10) {
             ProgressView()
             Text("Scanning Codex Analytics")
                 .font(.headline)
-            Text("Reading Codex JSONL sessions across configured CODEX_HOME directories.")
+            Text(statusMessage ?? "Reading Codex JSONL sessions across configured CODEX_HOME directories.")
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
+        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

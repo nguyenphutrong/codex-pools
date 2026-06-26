@@ -18,7 +18,10 @@ struct CodexAnalyticsCLIService {
         }
     }
 
-    func scanAnalytics(for instances: [CodexInstance]) throws -> CodexAnalyticsScanResult {
+    func scanAnalytics(
+        for instances: [CodexInstance],
+        progress: @escaping (String) -> Void = { _ in }
+    ) throws -> CodexAnalyticsScanResult {
         guard instances.count == 1, let instance = instances.first else {
             throw CLIError.unavailable
         }
@@ -41,15 +44,32 @@ struct CodexAnalyticsCLIService {
         let errorOutput = Pipe()
         process.standardOutput = output
         process.standardError = errorOutput
+        let outputReader = DataReader()
+        let progressReader = ProgressReader(progress: progress)
+        output.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty {
+                outputReader.consume(data)
+            }
+        }
+        errorOutput.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                return
+            }
+            progressReader.consume(data)
+        }
 
         try process.run()
         process.waitUntilExit()
+        output.fileHandleForReading.readabilityHandler = nil
+        errorOutput.fileHandleForReading.readabilityHandler = nil
 
-        let outputData = output.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorOutput.fileHandleForReading.readDataToEndOfFile()
+        outputReader.consume(output.fileHandleForReading.readDataToEndOfFile())
+        let outputData = outputReader.data
+        progressReader.finish()
         guard process.terminationStatus == 0 else {
-            let message = String(data: errorData, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let message = progressReader.errorText
             throw CLIError.failed(message)
         }
         guard !outputData.isEmpty else {
@@ -111,4 +131,109 @@ struct CodexAnalyticsCLIService {
     }()
 
     private static let iso8601Formatter = ISO8601DateFormatter()
+}
+
+private final class ProgressReader {
+    private let lock = NSLock()
+    private var buffer = Data()
+    private var errorLines: [String] = []
+    private let progress: (String) -> Void
+
+    var errorText: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return errorLines.joined(separator: "\n")
+    }
+
+    init(progress: @escaping (String) -> Void) {
+        self.progress = progress
+    }
+
+    func consume(_ data: Data) {
+        lock.lock()
+        buffer.append(data)
+        var lines: [String] = []
+        while let newlineRange = buffer.firstRange(of: Data([0x0A])) {
+            let lineData = buffer[..<newlineRange.lowerBound]
+            buffer.removeSubrange(..<newlineRange.upperBound)
+            if let line = String(data: Data(lineData), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !line.isEmpty {
+                lines.append(line)
+            }
+        }
+        lock.unlock()
+
+        for line in lines {
+            handle(line)
+        }
+    }
+
+    func finish() {
+        lock.lock()
+        let remaining = buffer
+        buffer.removeAll()
+        lock.unlock()
+
+        if let line = String(data: remaining, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !line.isEmpty {
+            handle(line)
+        }
+    }
+
+    private func handle(_ line: String) {
+        guard let data = line.data(using: .utf8),
+              let event = try? JSONDecoder().decode(CodexAnalyticsCLIProgress.self, from: data),
+              event.type == "progress"
+        else {
+            lock.lock()
+            errorLines.append(line)
+            lock.unlock()
+            return
+        }
+        progress(event.message)
+    }
+}
+
+private final class DataReader {
+    private let lock = NSLock()
+    private var storage = Data()
+
+    var data: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func consume(_ data: Data) {
+        lock.lock()
+        storage.append(data)
+        lock.unlock()
+    }
+}
+
+private struct CodexAnalyticsCLIProgress: Decodable {
+    var type: String
+    var phase: String
+    var scanned: Int
+    var total: Int
+    var cacheHits: Int
+    var parsed: Int
+    var skipped: Int
+
+    var message: String {
+        switch phase {
+        case "discovering":
+            return "Discovering Codex JSONL sessions..."
+        case "complete":
+            return "Analyzed \(scanned) of \(total) sessions. Cache hits: \(cacheHits), parsed: \(parsed), skipped: \(skipped)."
+        default:
+            guard total > 0 else {
+                return "Preparing Codex analytics scan..."
+            }
+            let percent = Int((Double(scanned) / Double(total) * 100).rounded())
+            return "Analyzing \(scanned) of \(total) sessions (\(percent)%). Cache hits: \(cacheHits), parsed: \(parsed), skipped: \(skipped)."
+        }
+    }
 }
