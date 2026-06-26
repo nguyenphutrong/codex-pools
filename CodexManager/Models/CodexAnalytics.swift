@@ -1,6 +1,6 @@
 import Foundation
 
-struct CodexTokenUsage: Equatable {
+struct CodexTokenUsage: Codable, Equatable {
     var inputTokens: Int
     var outputTokens: Int
     var cacheReadTokens: Int
@@ -25,13 +25,13 @@ struct CodexTokenUsage: Equatable {
     }
 }
 
-struct CodexToolCallSummary: Identifiable, Equatable {
+struct CodexToolCallSummary: Codable, Identifiable, Equatable {
     var id: String { name }
     var name: String
     var count: Int
 }
 
-struct CodexModelSummary: Identifiable, Equatable {
+struct CodexModelSummary: Codable, Identifiable, Equatable {
     var id: String { name }
     var name: String
     var count: Int
@@ -39,7 +39,7 @@ struct CodexModelSummary: Identifiable, Equatable {
     var estimatedCost: Double?
 }
 
-struct CodexSessionAnalytics: Identifiable, Equatable {
+struct CodexSessionAnalytics: Codable, Identifiable, Equatable {
     var id: String
     var threadID: String
     var instanceID: CodexInstance.ID
@@ -75,7 +75,7 @@ struct CodexSessionAnalytics: Identifiable, Equatable {
     }
 }
 
-struct CodexProjectAnalytics: Identifiable, Equatable {
+struct CodexProjectAnalytics: Codable, Identifiable, Equatable {
     var id: String { folder }
     var folder: String
     var name: String
@@ -90,7 +90,7 @@ struct CodexProjectAnalytics: Identifiable, Equatable {
     var topTools: [CodexToolCallSummary]
 }
 
-struct CodexCostBucket: Identifiable, Equatable {
+struct CodexCostBucket: Codable, Identifiable, Equatable {
     var id: String { name }
     var name: String
     var cost: Double
@@ -98,7 +98,7 @@ struct CodexCostBucket: Identifiable, Equatable {
     var tokenUsage: CodexTokenUsage
 }
 
-struct CodexCostBreakdown: Equatable {
+struct CodexCostBreakdown: Codable, Equatable {
     var totalCost: Double
     var unknownPricingModelCount: Int
     var byModel: [CodexCostBucket]
@@ -108,13 +108,13 @@ struct CodexCostBreakdown: Equatable {
     var topSessions: [CodexSessionAnalytics]
 }
 
-struct CodexDailyActivity: Identifiable, Equatable {
+struct CodexDailyActivity: Codable, Identifiable, Equatable {
     var id: String { day }
     var day: String
     var sessionCount: Int
 }
 
-struct CodexAnalyticsOverview: Equatable {
+struct CodexAnalyticsOverview: Codable, Equatable {
     var totalSessions: Int
     var archivedSessions: Int
     var totalProjects: Int
@@ -131,14 +131,14 @@ struct CodexAnalyticsOverview: Equatable {
     var hourlyActivity: [Int]
 }
 
-struct CodexAnalyticsSnapshot: Equatable {
+struct CodexAnalyticsSnapshot: Codable, Equatable {
     var sessions: [CodexSessionAnalytics]
     var projects: [CodexProjectAnalytics]
     var overview: CodexAnalyticsOverview
     var costs: CodexCostBreakdown
 }
 
-struct CodexAnalyticsScanResult: Equatable {
+struct CodexAnalyticsScanResult: Codable, Equatable {
     var snapshot: CodexAnalyticsSnapshot
     var skippedFileCount: Int
 }

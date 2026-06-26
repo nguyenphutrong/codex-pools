@@ -29,6 +29,7 @@ final class InstanceStore: ObservableObject {
     private let exportService = ExportService()
     private let importService = ImportService()
     private let launchService = LaunchService()
+    private let analyticsCLIService = CodexAnalyticsCLIService()
     private let fileManager: FileManager
     private let configURL: URL
     private let templatesURL: URL
@@ -355,6 +356,7 @@ final class InstanceStore: ObservableObject {
 
         analyticsScanGeneration += 1
         let generation = analyticsScanGeneration
+        let analyticsCLIService = analyticsCLIService
 
         analyticsScanTask?.cancel()
         if let analyticsScanKey {
@@ -366,7 +368,8 @@ final class InstanceStore: ObservableObject {
         analyticsStatusMessage = nil
         analyticsScanTask = Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) {
-                CodexSessionService().scanAnalytics(for: instancesSnapshot)
+                (try? analyticsCLIService.scanAnalytics(for: instancesSnapshot))
+                    ?? CodexSessionService().scanAnalytics(for: instancesSnapshot)
             }.value
 
             guard let self,

@@ -4,6 +4,7 @@ set -euo pipefail
 MODE="${1:-run}"
 APP_NAME="Codex Pools"
 EXECUTABLE_NAME="CodexPools"
+CLI_EXECUTABLE_NAME="codex-pools"
 BUNDLE_ID="com.nguyenphutrong.CodexPools"
 MIN_SYSTEM_VERSION="13.0"
 APPCAST_URL="${APPCAST_URL:-https://nguyenphutrong.github.io/codex-pools/appcast.xml}"
@@ -20,6 +21,7 @@ APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_FRAMEWORKS="$APP_CONTENTS/Frameworks"
 APP_BINARY="$APP_MACOS/$EXECUTABLE_NAME"
+CLI_BINARY="$APP_RESOURCES/$CLI_EXECUTABLE_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON_SOURCE="$ROOT_DIR/CodexManager/Resources/AppIcon.png"
 APP_ICON_FILE="CodexPools.icns"
@@ -76,12 +78,17 @@ copy_sparkle_framework() {
 pkill -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || true
 
 swift build
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}"
+CARGO_TARGET_DIR="$CARGO_TARGET_DIR" cargo build
 BUILD_BINARY="$(swift build --show-bin-path)/$EXECUTABLE_NAME"
+CLI_BUILD_BINARY="$CARGO_TARGET_DIR/debug/$CLI_EXECUTABLE_NAME"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$APP_FRAMEWORKS"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
+cp "$CLI_BUILD_BINARY" "$CLI_BINARY"
+chmod +x "$CLI_BINARY"
 build_app_icon
 copy_sparkle_framework
 

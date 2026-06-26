@@ -422,6 +422,88 @@ final class CodexSessionServiceTests: XCTestCase {
         XCTAssertEqual(result.snapshot.costs.byModel.first?.name, "gpt-5")
     }
 
+    func testCodexAnalyticsCLIJSONDecodesSwiftContract() throws {
+        let json = """
+        {
+          "snapshot": {
+            "sessions": [{
+              "id": "11111111-2222-3333-4444-555555555555:thread:sessions/rollout-thread.jsonl",
+              "threadID": "thread",
+              "instanceID": "11111111-2222-3333-4444-555555555555",
+              "instanceName": "Work",
+              "codexHome": "/tmp/codex",
+              "title": "Indexed Title",
+              "workspacePath": "/repo/app",
+              "rolloutPath": "/tmp/codex/sessions/rollout-thread.jsonl",
+              "relativeRolloutPath": "sessions/rollout-thread.jsonl",
+              "createdAt": "2026-06-26T01:00:00Z",
+              "updatedAt": "2026-06-26T01:06:00Z",
+              "isArchived": false,
+              "source": "cli",
+              "originator": "codex",
+              "cliVersion": "1.0",
+              "modelProvider": "openai",
+              "userMessageCount": 1,
+              "assistantMessageCount": 1,
+              "systemMessageCount": 0,
+              "userCharacterCount": 14,
+              "assistantCharacterCount": 20,
+              "tokenUsage": {
+                "inputTokens": 900,
+                "outputTokens": 200,
+                "cacheReadTokens": 100,
+                "cacheWriteTokens": 0
+              },
+              "models": ["gpt-5"],
+              "toolCalls": [{"name": "shell", "count": 1}],
+              "estimatedCost": 0.003125
+            }],
+            "projects": [],
+            "overview": {
+              "totalSessions": 1,
+              "archivedSessions": 0,
+              "totalProjects": 0,
+              "totalMessages": 2,
+              "totalToolCalls": 1,
+              "tokenUsage": {
+                "inputTokens": 900,
+                "outputTokens": 200,
+                "cacheReadTokens": 100,
+                "cacheWriteTokens": 0
+              },
+              "estimatedCost": 0.003125,
+              "firstSeenAt": "2026-06-26T01:06:00Z",
+              "lastSeenAt": "2026-06-26T01:06:00Z",
+              "topModels": [],
+              "topTools": [],
+              "sessionsByMonth": [],
+              "dailyActivity": [],
+              "hourlyActivity": [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+            },
+            "costs": {
+              "totalCost": 0.003125,
+              "unknownPricingModelCount": 0,
+              "byModel": [],
+              "byProject": [],
+              "byInstance": [],
+              "byMonth": [],
+              "topSessions": []
+            }
+          },
+          "skippedFileCount": 0
+        }
+        """
+
+        let result = try CodexAnalyticsCLIService.decodeScanResult(from: Data(json.utf8))
+
+        let session = try XCTUnwrap(result.snapshot.sessions.first)
+        XCTAssertEqual(session.threadID, "thread")
+        XCTAssertEqual(session.instanceID.uuidString, "11111111-2222-3333-4444-555555555555")
+        XCTAssertEqual(session.tokenUsage.inputTokens, 900)
+        XCTAssertEqual(session.toolCalls.first?.name, "shell")
+        XCTAssertEqual(result.skippedFileCount, 0)
+    }
+
     func testModelPricingNormalizesVersionedAndProviderPrefixedNames() throws {
         XCTAssertEqual(CodexModelPricing.normalizedModelName("openai/gpt-5-20260101"), "gpt-5")
         XCTAssertEqual(CodexModelPricing.normalizedModelName("MODEL_GPT_4O_MINI"), "gpt-4o-mini")
