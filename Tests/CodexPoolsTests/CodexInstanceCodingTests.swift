@@ -10,6 +10,10 @@ final class CodexInstanceCodingTests: XCTestCase {
             iconPath: "/tmp/icon.png",
             codexHome: "/tmp/home",
             bundleStatus: .ready,
+            bundleShortVersion: "26.623.31921",
+            bundleBuildVersion: "31921",
+            sourceShortVersion: "26.623.31921",
+            sourceBuildVersion: "31921",
             extraEnvVars: ["CODEX_HOME": "/tmp/home", "MODE": "review"],
             launchArgs: ["--sandbox", "workspace-write"],
             createdAt: Date(timeIntervalSince1970: 1_704_067_200),
@@ -40,6 +44,10 @@ final class CodexInstanceCodingTests: XCTestCase {
         XCTAssertNil(decoded.iconPath)
         XCTAssertEqual(decoded.codexHome, "/tmp/legacy")
         XCTAssertEqual(decoded.bundleStatus, .missingSourceApp)
+        XCTAssertNil(decoded.bundleShortVersion)
+        XCTAssertNil(decoded.bundleBuildVersion)
+        XCTAssertNil(decoded.sourceShortVersion)
+        XCTAssertNil(decoded.sourceBuildVersion)
         XCTAssertEqual(decoded.extraEnvVars, [:])
         XCTAssertEqual(decoded.launchArgs, [])
         XCTAssertEqual(decoded.createdAt, Date(timeIntervalSince1970: 1_704_067_200))

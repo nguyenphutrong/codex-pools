@@ -49,4 +49,58 @@ final class CodexInstanceTests: XCTestCase {
 
         XCTAssertEqual(instance.managedAppBundleName, "Review Pool.app")
     }
+
+    func testBundleVersionSummaryShowsReadyCloneVersion() {
+        let instance = CodexInstance(
+            name: "Review Pool",
+            codexHome: "/tmp/home",
+            bundleStatus: .ready,
+            bundleShortVersion: "26.623.31921",
+            bundleBuildVersion: "31921",
+            sourceShortVersion: "26.623.31921",
+            sourceBuildVersion: "31921"
+        )
+
+        XCTAssertEqual(instance.bundleVersionSummary, "v26.623.31921")
+        XCTAssertEqual(instance.detailedBundleVersionSummary, "v26.623.31921 (31921)")
+    }
+
+    func testBundleVersionSummaryShowsStaleCloneAndSourceVersion() {
+        let instance = CodexInstance(
+            name: "Review Pool",
+            codexHome: "/tmp/home",
+            bundleStatus: .needsRebuild,
+            bundleShortVersion: "26.623.31921",
+            bundleBuildVersion: "31921",
+            sourceShortVersion: "26.624.10000",
+            sourceBuildVersion: "10000"
+        )
+
+        XCTAssertEqual(instance.bundleVersionSummary, "v26.623.31921 -> v26.624.10000")
+        XCTAssertEqual(instance.detailedBundleVersionSummary, "v26.623.31921 (31921) -> v26.624.10000 (10000)")
+    }
+
+    func testBundleVersionSummaryHandlesMissingCloneVersion() {
+        let instance = CodexInstance(
+            name: "Review Pool",
+            codexHome: "/tmp/home",
+            bundleStatus: .needsRebuild,
+            sourceShortVersion: "26.624.10000",
+            sourceBuildVersion: "10000"
+        )
+
+        XCTAssertEqual(instance.bundleVersionSummary, "Not built yet")
+        XCTAssertEqual(instance.detailedBundleVersionSummary, "Not built yet (source v26.624.10000 (10000))")
+    }
+
+    func testBundleVersionSummaryHandlesMissingSourceAndCloneVersion() {
+        let instance = CodexInstance(
+            name: "Review Pool",
+            codexHome: "/tmp/home",
+            bundleStatus: .missingSourceApp
+        )
+
+        XCTAssertEqual(instance.bundleVersionSummary, "Version unknown")
+        XCTAssertEqual(instance.detailedBundleVersionSummary, "Version unknown")
+    }
 }

@@ -41,6 +41,7 @@ struct LaunchService {
         environment.merge(instance.extraEnvVars) { _, new in new }
         environment["CODEX_HOME"] = homePath
         environment["CODEX_INSTANCE_ID"] = instance.id.uuidString
+        environment["CODEX_SPARKLE_ENABLED"] = "false"
         configuration.environment = environment
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -62,8 +63,8 @@ struct LaunchService {
         try removeManagedUserData(for: instance)
     }
 
-    func bundleStatus(for instance: CodexInstance) -> CodexInstance.BundleStatus {
-        bundleCloneService.bundleStatus(for: instance)
+    func bundleDetails(for instance: CodexInstance) -> BundleCloneService.BundleDetails {
+        bundleCloneService.bundleDetails(for: instance)
     }
 
     func quit(instance: CodexInstance) throws {

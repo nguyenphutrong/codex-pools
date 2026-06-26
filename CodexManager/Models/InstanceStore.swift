@@ -83,7 +83,7 @@ final class InstanceStore: ObservableObject {
             name: baseName,
             codexHome: CodexInstance.defaultHomePath(for: baseName)
         )
-        instance.bundleStatus = launchService.bundleStatus(for: instance)
+        refreshBundleDetails(for: &instance)
 
         instances.append(instance)
         selectedInstanceID = instance.id
@@ -99,7 +99,7 @@ final class InstanceStore: ObservableObject {
             extraEnvVars: template.extraEnvVars,
             launchArgs: template.launchFlags
         )
-        instance.bundleStatus = launchService.bundleStatus(for: instance)
+        refreshBundleDetails(for: &instance)
 
         instances.append(instance)
         selectedInstanceID = instance.id
@@ -135,7 +135,7 @@ final class InstanceStore: ObservableObject {
     func update(_ instance: CodexInstance) {
         guard let index = instances.firstIndex(where: { $0.id == instance.id }) else { return }
         var updated = instance
-        updated.bundleStatus = launchService.bundleStatus(for: updated)
+        refreshBundleDetails(for: &updated)
         instances[index] = updated
         selectedInstanceID = instance.id
         save()
@@ -172,7 +172,7 @@ final class InstanceStore: ObservableObject {
                 iconPath: instance.iconPath,
                 codexHome: newHome
             )
-            clone.bundleStatus = launchService.bundleStatus(for: clone)
+            refreshBundleDetails(for: &clone)
             instances.append(clone)
             selectedInstanceID = clone.id
             save()
@@ -220,7 +220,7 @@ final class InstanceStore: ObservableObject {
 
             var launched = instance
             launched.lastLaunchedAt = Date()
-            launched.bundleStatus = launchService.bundleStatus(for: launched)
+            refreshBundleDetails(for: &launched)
             update(launched)
         } catch {
             errorMessage = "Could not launch Codex: \(error.localizedDescription)"
@@ -313,9 +313,9 @@ final class InstanceStore: ObservableObject {
         var didChange = false
         instances = instances.map { instance in
             var updated = instance
-            let status = launchService.bundleStatus(for: updated)
-            if updated.bundleStatus != status {
-                updated.bundleStatus = status
+            let previous = updated
+            refreshBundleDetails(for: &updated)
+            if updated != previous {
                 didChange = true
             }
             return updated
@@ -335,6 +335,15 @@ final class InstanceStore: ObservableObject {
 
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
+    }
+
+    private func refreshBundleDetails(for instance: inout CodexInstance) {
+        let details = launchService.bundleDetails(for: instance)
+        instance.bundleStatus = details.status
+        instance.bundleShortVersion = details.cloneShortVersion
+        instance.bundleBuildVersion = details.cloneBuildVersion
+        instance.sourceShortVersion = details.sourceShortVersion
+        instance.sourceBuildVersion = details.sourceBuildVersion
     }
 
     private func save() {
