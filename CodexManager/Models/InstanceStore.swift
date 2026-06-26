@@ -38,6 +38,7 @@ final class InstanceStore: ObservableObject {
     private var sessionMutationTask: Task<Void, Never>?
     private var sessionScanGeneration = 0
     private var analyticsScanGeneration = 0
+    private var analyticsScanKey: String?
 
     var originalInstance: CodexInstance {
         CodexInstance.original(homeDirectory: fileManager.homeDirectoryForCurrentUser)
@@ -344,11 +345,19 @@ final class InstanceStore: ObservableObject {
     }
 
     func refreshAnalytics(for instances: [CodexInstance]? = nil) {
+        let instancesSnapshot = instances ?? visibleInstances
+        let scanKey = instancesSnapshot
+            .map { "\($0.id.uuidString):\($0.codexHome)" }
+            .joined(separator: "|")
+        if isScanningAnalytics, analyticsScanKey == scanKey {
+            return
+        }
+
         analyticsScanGeneration += 1
         let generation = analyticsScanGeneration
-        let instancesSnapshot = instances ?? visibleInstances
 
         analyticsScanTask?.cancel()
+        analyticsScanKey = scanKey
         isScanningAnalytics = true
         analyticsStatusMessage = nil
         analyticsScanTask = Task { [weak self] in
@@ -366,6 +375,7 @@ final class InstanceStore: ObservableObject {
             self.analyticsScanResult = result
             self.analyticsStatusMessage = "Loaded \(result.snapshot.sessions.count) analytics session(s)."
             self.isScanningAnalytics = false
+            self.analyticsScanKey = nil
         }
     }
 
@@ -380,6 +390,7 @@ final class InstanceStore: ObservableObject {
         analyticsScanGeneration += 1
         analyticsScanTask?.cancel()
         analyticsScanTask = nil
+        analyticsScanKey = nil
         isScanningAnalytics = false
     }
 

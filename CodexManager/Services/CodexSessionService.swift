@@ -1,6 +1,9 @@
 import Foundation
 
 struct CodexSessionService {
+    private static let analyticsDetailedSessionLimit = 250
+    private static let analyticsDetailedByteLimit = 64 * 1024 * 1024
+
     private let fileManager: FileManager
     private let iso8601Formatter = ISO8601DateFormatter()
 
@@ -53,7 +56,7 @@ struct CodexSessionService {
     }
 
     func scanAnalytics(for instances: [CodexInstance]) -> CodexAnalyticsScanResult {
-        var sessions: [CodexSessionAnalytics] = []
+        var candidates: [AnalyticsCandidate] = []
         var skippedFileCount = 0
 
         for instance in instances {
@@ -65,7 +68,7 @@ struct CodexSessionService {
                 guard fileManager.fileExists(atPath: rootURL.path) else { continue }
 
                 for rolloutURL in listRolloutFiles(under: rootURL) {
-                    guard let session = readAnalytics(
+                    guard let thread = readThread(
                         rolloutURL: rolloutURL,
                         sessionDirectory: directoryName,
                         homeURL: homeURL,
@@ -75,8 +78,45 @@ struct CodexSessionService {
                         skippedFileCount += 1
                         continue
                     }
-                    sessions.append(session)
+                    candidates.append(AnalyticsCandidate(
+                        thread: thread,
+                        rolloutURL: rolloutURL,
+                        sessionDirectory: directoryName,
+                        homeURL: homeURL,
+                        instance: instance,
+                        index: index
+                    ))
                 }
+            }
+        }
+
+        candidates.sort { left, right in
+            switch (left.thread.updatedAt, right.thread.updatedAt) {
+            case let (leftDate?, rightDate?) where leftDate != rightDate:
+                return leftDate > rightDate
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return left.thread.byteCount > right.thread.byteCount
+            }
+        }
+
+        var sessions: [CodexSessionAnalytics] = []
+        var detailedCount = 0
+        var detailedBytes = 0
+        for candidate in candidates {
+            let shouldParseDetails = detailedCount < Self.analyticsDetailedSessionLimit
+                && detailedBytes + candidate.thread.byteCount <= Self.analyticsDetailedByteLimit
+
+            if shouldParseDetails,
+               let session = readAnalytics(candidate) {
+                sessions.append(session)
+                detailedCount += 1
+                detailedBytes += candidate.thread.byteCount
+            } else {
+                sessions.append(lightweightAnalytics(from: candidate.thread))
             }
         }
 
@@ -381,6 +421,17 @@ struct CodexSessionService {
     }
 
     private func readAnalytics(
+        _ candidate: AnalyticsCandidate
+    ) -> CodexSessionAnalytics? {
+        readAnalytics(
+            thread: candidate.thread,
+            rolloutURL: candidate.rolloutURL,
+            homeURL: candidate.homeURL,
+            index: candidate.index
+        )
+    }
+
+    private func readAnalytics(
         rolloutURL: URL,
         sessionDirectory: SessionDirectory,
         homeURL: URL,
@@ -397,6 +448,20 @@ struct CodexSessionService {
             return nil
         }
 
+        return readAnalytics(
+            thread: thread,
+            rolloutURL: rolloutURL,
+            homeURL: homeURL,
+            index: index
+        )
+    }
+
+    private func readAnalytics(
+        thread: CodexSessionThread,
+        rolloutURL: URL,
+        homeURL: URL,
+        index: [String: [String: Any]]
+    ) -> CodexSessionAnalytics? {
         guard let firstLine = try? firstNonEmptyLine(in: rolloutURL),
               let metadata = decodeJSONObject(firstLine),
               let payload = metadata["payload"] as? [String: Any]
@@ -459,6 +524,36 @@ struct CodexSessionService {
                 .map { CodexToolCallSummary(name: $0.key, count: $0.value) }
                 .sorted { $0.count == $1.count ? $0.name < $1.name : $0.count > $1.count },
             estimatedCost: hasPricedModel ? estimatedCost : nil
+        )
+    }
+
+    private func lightweightAnalytics(from thread: CodexSessionThread) -> CodexSessionAnalytics {
+        CodexSessionAnalytics(
+            id: thread.id,
+            threadID: thread.threadID,
+            instanceID: thread.instanceID,
+            instanceName: thread.instanceName,
+            codexHome: thread.codexHome,
+            title: thread.title,
+            workspacePath: thread.workspacePath,
+            rolloutPath: thread.rolloutPath,
+            relativeRolloutPath: thread.relativeRolloutPath,
+            createdAt: nil,
+            updatedAt: thread.updatedAt,
+            isArchived: thread.isArchived,
+            source: nil,
+            originator: nil,
+            cliVersion: nil,
+            modelProvider: nil,
+            userMessageCount: 0,
+            assistantMessageCount: 0,
+            systemMessageCount: 0,
+            userCharacterCount: 0,
+            assistantCharacterCount: 0,
+            tokenUsage: .zero,
+            models: [],
+            toolCalls: [],
+            estimatedCost: nil
         )
     }
 
@@ -1333,6 +1428,15 @@ struct CodexSessionService {
 private enum SessionDirectory: String, CaseIterable {
     case sessions
     case archived = "archived_sessions"
+}
+
+private struct AnalyticsCandidate {
+    var thread: CodexSessionThread
+    var rolloutURL: URL
+    var sessionDirectory: SessionDirectory
+    var homeURL: URL
+    var instance: CodexInstance
+    var index: [String: [String: Any]]
 }
 
 private struct RawTokenUsage: Equatable {
