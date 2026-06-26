@@ -17,18 +17,22 @@ final class InstanceStore: ObservableObject {
     @Published var pendingImportedInstances: [CodexInstance]?
     @Published private(set) var sessionScanResult = CodexSessionScanResult(sessions: [], skippedFileCount: 0)
     @Published private(set) var sessionStatusMessage: String?
+    @Published private(set) var isScanningSessions = false
+    @Published private(set) var isPerformingSessionMutation = false
     @Published private(set) var runningInstanceIDs: Set<CodexInstance.ID> = []
     @Published private var launchingInstanceIDs: Set<CodexInstance.ID> = []
 
     private let exportService = ExportService()
     private let importService = ImportService()
     private let launchService = LaunchService()
-    private let sessionService = CodexSessionService()
     private let fileManager: FileManager
     private let configURL: URL
     private let templatesURL: URL
     private let iconDirectoryURL: URL
     private var runningAppsCancellable: AnyCancellable?
+    private var sessionScanTask: Task<Void, Never>?
+    private var sessionMutationTask: Task<Void, Never>?
+    private var sessionScanGeneration = 0
 
     var selectedInstance: CodexInstance? {
         guard let selectedInstanceID else { return instances.first }
@@ -293,45 +297,134 @@ final class InstanceStore: ObservableObject {
     }
 
     func refreshSessions() {
-        sessionScanResult = sessionService.scanSessions(for: instances)
+        sessionScanGeneration += 1
+        let generation = sessionScanGeneration
+        let instancesSnapshot = instances
+
+        sessionScanTask?.cancel()
+        isScanningSessions = true
+        sessionScanTask = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                CodexSessionService().scanSessions(for: instancesSnapshot)
+            }.value
+
+            guard let self,
+                  !Task.isCancelled,
+                  generation == self.sessionScanGeneration
+            else {
+                return
+            }
+
+            self.sessionScanResult = result
+            self.isScanningSessions = false
+        }
+    }
+
+    func cancelSessionRefresh() {
+        sessionScanGeneration += 1
+        sessionScanTask?.cancel()
+        sessionScanTask = nil
+        isScanningSessions = false
     }
 
     func copySessions(_ sessionIDs: Set<CodexSessionThread.ID>, to targetInstanceID: CodexInstance.ID) {
-        guard let target = instances.first(where: { $0.id == targetInstanceID }) else { return }
-        do {
-            let summary = try sessionService.copySessions(
-                sessionIDs: sessionIDs,
-                to: target,
-                from: instances
-            )
-            sessionStatusMessage = "Copied \(summary.copiedSessionCount) session(s) to \(target.managedAppName)."
-            refreshSessions()
-        } catch {
-            errorMessage = "Could not copy sessions: \(error.localizedDescription)"
+        guard !isPerformingSessionMutation,
+              let target = instances.first(where: { $0.id == targetInstanceID })
+        else {
+            return
+        }
+
+        let instancesSnapshot = instances
+        isPerformingSessionMutation = true
+        sessionMutationTask = Task { [weak self] in
+            let result: Result<CodexSessionCopySummary, Error> = await Task.detached(priority: .userInitiated) {
+                do {
+                    let summary = try CodexSessionService().copySessions(
+                        sessionIDs: sessionIDs,
+                        to: target,
+                        from: instancesSnapshot
+                    )
+                    return .success(summary)
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+
+            guard let self, !Task.isCancelled else { return }
+            self.isPerformingSessionMutation = false
+
+            switch result {
+            case .success(let summary):
+                self.sessionStatusMessage = "Copied \(summary.copiedSessionCount) session(s) to \(target.managedAppName)."
+                self.refreshSessions()
+            case .failure(let error):
+                self.errorMessage = "Could not copy sessions: \(error.localizedDescription)"
+            }
         }
     }
 
     func syncSessionsAcrossIdleInstances() {
-        do {
-            let summary = try sessionService.syncSessionsAcrossIdleInstances(
-                instances,
-                runningInstanceIDs: runningInstanceIDs
-            )
-            sessionStatusMessage = "Synced \(summary.addedSessionCount + summary.updatedSessionCount) session(s) across \(summary.mutatedInstanceCount) instance(s)."
-            refreshSessions()
-        } catch {
-            errorMessage = "Could not sync sessions: \(error.localizedDescription)"
+        guard !isPerformingSessionMutation else {
+            return
+        }
+
+        let instancesSnapshot = instances
+        let runningInstanceIDsSnapshot = runningInstanceIDs
+        isPerformingSessionMutation = true
+        sessionMutationTask = Task { [weak self] in
+            let result: Result<CodexSessionSyncSummary, Error> = await Task.detached(priority: .userInitiated) {
+                do {
+                    let summary = try CodexSessionService().syncSessionsAcrossIdleInstances(
+                        instancesSnapshot,
+                        runningInstanceIDs: runningInstanceIDsSnapshot
+                    )
+                    return .success(summary)
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+
+            guard let self, !Task.isCancelled else { return }
+            self.isPerformingSessionMutation = false
+
+            switch result {
+            case .success(let summary):
+                self.sessionStatusMessage = "Synced \(summary.addedSessionCount + summary.updatedSessionCount) session(s) across \(summary.mutatedInstanceCount) instance(s)."
+                self.refreshSessions()
+            case .failure(let error):
+                self.errorMessage = "Could not sync sessions: \(error.localizedDescription)"
+            }
         }
     }
 
     func repairSessionIndex(for instanceID: CodexInstance.ID) {
-        guard let instance = instances.first(where: { $0.id == instanceID }) else { return }
-        do {
-            let summary = try sessionService.repairSessionIndex(for: instance)
-            sessionStatusMessage = "Rebuilt \(summary.indexedSessionCount) session index entries for \(instance.managedAppName)."
-            refreshSessions()
-        } catch {
-            errorMessage = "Could not repair session index: \(error.localizedDescription)"
+        guard !isPerformingSessionMutation,
+              let instance = instances.first(where: { $0.id == instanceID })
+        else {
+            return
+        }
+
+        isPerformingSessionMutation = true
+        sessionMutationTask = Task { [weak self] in
+            let result: Result<CodexSessionRepairSummary, Error> = await Task.detached(priority: .userInitiated) {
+                do {
+                    let summary = try CodexSessionService().repairSessionIndex(for: instance)
+                    return .success(summary)
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+
+            guard let self, !Task.isCancelled else { return }
+            self.isPerformingSessionMutation = false
+
+            switch result {
+            case .success(let summary):
+                self.sessionStatusMessage = "Rebuilt \(summary.indexedSessionCount) session index entries for \(instance.managedAppName)."
+                self.refreshSessions()
+            case .failure(let error):
+                self.errorMessage = "Could not repair session index: \(error.localizedDescription)"
+            }
         }
     }
 

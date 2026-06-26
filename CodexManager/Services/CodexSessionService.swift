@@ -297,11 +297,7 @@ struct CodexSessionService {
         instance: CodexInstance,
         index: [String: [String: Any]]
     ) -> CodexSessionThread? {
-        guard let content = try? String(contentsOf: rolloutURL, encoding: .utf8),
-              let firstLine = content
-                .split(whereSeparator: \.isNewline)
-                .map(String.init)
-                .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+        guard let firstLine = try? firstNonEmptyLine(in: rolloutURL),
               let metadata = decodeJSONObject(firstLine),
               metadata["type"] as? String == "session_meta",
               let threadID = sessionID(in: metadata)
@@ -310,10 +306,10 @@ struct CodexSessionService {
         }
 
         let indexEntry = index[threadID]
+        let attributes = (try? fileManager.attributesOfItem(atPath: rolloutURL.path)) ?? [:]
         let title = title(in: indexEntry) ?? title(in: metadata) ?? threadID
         let updatedAt = updatedAt(in: indexEntry)
-            ?? latestTimestamp(in: content)
-            ?? fileModifiedAt(rolloutURL)
+            ?? (attributes[.modificationDate] as? Date)
 
         let relativeRolloutPath = relativePath(from: homeURL, to: rolloutURL)
         return CodexSessionThread(
@@ -331,10 +327,42 @@ struct CodexSessionService {
             rolloutPath: rolloutURL.path,
             relativeRolloutPath: relativeRolloutPath,
             updatedAt: updatedAt,
-            byteCount: content.utf8.count,
-            lineCount: content.split(whereSeparator: \.isNewline).count,
+            byteCount: fileSize(in: attributes),
+            lineCount: lineCount(in: indexEntry),
             isArchived: sessionDirectory == .archived
         )
+    }
+
+    private func firstNonEmptyLine(in url: URL) throws -> String? {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer {
+            try? handle.close()
+        }
+
+        var pending = Data()
+        while true {
+            let chunk = handle.readData(ofLength: 64 * 1024)
+            if chunk.isEmpty {
+                return trimmedLine(from: pending)
+            }
+
+            pending.append(chunk)
+            while let newlineRange = pending.firstRange(of: Data([0x0A])) {
+                let lineData = pending[..<newlineRange.lowerBound]
+                pending.removeSubrange(..<newlineRange.upperBound)
+
+                if let line = trimmedLine(from: Data(lineData)) {
+                    return line
+                }
+            }
+        }
+    }
+
+    private func trimmedLine(from data: Data) -> String? {
+        guard !data.isEmpty else { return nil }
+        let line = String(decoding: data, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return line.isEmpty ? nil : line
     }
 
     private func readSessionIndexMap(in homeURL: URL) -> [String: [String: Any]] {
@@ -405,27 +433,32 @@ struct CodexSessionService {
         return nil
     }
 
-    private func latestTimestamp(in content: String) -> Date? {
-        content
-            .split(whereSeparator: \.isNewline)
-            .compactMap { decodeJSONObject(String($0)) }
-            .compactMap { object -> Date? in
-                dateValue(object["timestamp"])
-                    ?? dateValue(object["time"])
-                    ?? dateValue(object["created_at"])
-                    ?? dateValue(object["createdAt"])
-                    ?? ((object["payload"] as? [String: Any]).flatMap { payload in
-                        dateValue(payload["timestamp"])
-                            ?? dateValue(payload["time"])
-                            ?? dateValue(payload["created_at"])
-                            ?? dateValue(payload["createdAt"])
-                    })
+    private func lineCount(in object: [String: Any]?) -> Int {
+        guard let object else { return 0 }
+        for key in ["line_count", "lineCount"] {
+            if let number = object[key] as? NSNumber {
+                return number.intValue
             }
-            .max()
+            if let text = object[key] as? String,
+               let count = Int(text) {
+                return count
+            }
+        }
+        return 0
     }
 
     private func fileModifiedAt(_ url: URL) -> Date? {
         (try? fileManager.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
+    }
+
+    private func fileSize(in attributes: [FileAttributeKey: Any]) -> Int {
+        if let number = attributes[.size] as? NSNumber {
+            return number.intValue
+        }
+        if let size = attributes[.size] as? Int {
+            return size
+        }
+        return 0
     }
 
     private func dateValue(_ value: Any?) -> Date? {

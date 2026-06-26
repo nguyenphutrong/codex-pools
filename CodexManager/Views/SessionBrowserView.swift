@@ -25,6 +25,9 @@ struct SessionBrowserView: View {
             targetInstanceID = store.instances.first?.id
             repairInstanceID = store.selectedInstance?.id ?? store.instances.first?.id
         }
+        .onDisappear {
+            store.cancelSessionRefresh()
+        }
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search sessions")
         .confirmationDialog(
             pendingAction?.title ?? "Confirm",
@@ -59,6 +62,7 @@ struct SessionBrowserView: View {
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
+            .disabled(store.isScanningSessions || store.isPerformingSessionMutation)
 
             Button {
                 dismiss()
@@ -122,10 +126,25 @@ struct SessionBrowserView: View {
             .width(min: 120, ideal: 150)
         }
         .overlay {
-            if filteredSessions.isEmpty {
+            if store.isScanningSessions && store.sessionScanResult.sessions.isEmpty {
+                loadingState
+            } else if filteredSessions.isEmpty {
                 emptyState
             }
         }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.regular)
+            Text("Scanning Sessions")
+                .font(.headline)
+            Text("Reading Codex rollout metadata in the background.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .padding(28)
     }
 
     private var emptyState: some View {
@@ -151,7 +170,7 @@ struct SessionBrowserView: View {
             } label: {
                 Label("Reveal", systemImage: "folder")
             }
-            .disabled(selectedSessions.count != 1)
+            .disabled(selectedSessions.count != 1 || store.isScanningSessions)
 
             Picker("Copy to", selection: targetSelection) {
                 ForEach(store.instances) { instance in
@@ -159,14 +178,14 @@ struct SessionBrowserView: View {
                 }
             }
             .frame(width: 220)
-            .disabled(store.instances.isEmpty)
+            .disabled(store.instances.isEmpty || store.isPerformingSessionMutation)
 
             Button {
                 pendingAction = .copy(selectedSessionIDs.count, targetName)
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
             }
-            .disabled(selectedSessionIDs.isEmpty || targetInstanceID == nil)
+            .disabled(selectedSessionIDs.isEmpty || targetInstanceID == nil || store.isPerformingSessionMutation)
 
             Divider()
                 .frame(height: 18)
@@ -177,25 +196,39 @@ struct SessionBrowserView: View {
                 }
             }
             .frame(width: 220)
-            .disabled(store.instances.isEmpty)
+            .disabled(store.instances.isEmpty || store.isPerformingSessionMutation)
 
             Button {
                 pendingAction = .repair(repairTargetName)
             } label: {
                 Label("Repair Index", systemImage: "wrench.and.screwdriver")
             }
-            .disabled(repairInstanceID == nil)
+            .disabled(repairInstanceID == nil || store.isPerformingSessionMutation)
 
             Button {
                 pendingAction = .sync
             } label: {
                 Label("Sync Idle", systemImage: "arrow.triangle.2.circlepath")
             }
-            .disabled(store.instances.count < 2)
+            .disabled(store.instances.count < 2 || store.isPerformingSessionMutation)
 
             Spacer()
 
-            if let message = store.sessionStatusMessage {
+            if store.isPerformingSessionMutation {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Updating sessions...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else if store.isScanningSessions {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Scanning...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else if let message = store.sessionStatusMessage {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -230,6 +263,9 @@ struct SessionBrowserView: View {
     private var summaryText: String {
         let total = store.sessionScanResult.sessions.count
         let skipped = store.sessionScanResult.skippedFileCount
+        if store.isScanningSessions {
+            return "Scanning session metadata..."
+        }
         if skipped == 0 {
             return "\(total) session(s) across \(store.instances.count) instance(s)"
         }

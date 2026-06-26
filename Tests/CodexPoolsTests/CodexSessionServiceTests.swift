@@ -84,7 +84,35 @@ final class CodexSessionServiceTests: XCTestCase {
         XCTAssertEqual(result.skippedFileCount, 1)
         XCTAssertEqual(result.sessions[0].title, "thread-2")
         XCTAssertTrue(result.sessions[0].isArchived)
-        XCTAssertEqual(result.sessions[0].lineCount, 2)
+        XCTAssertEqual(result.sessions[0].lineCount, 0)
+    }
+
+    func testScanSessionsFallsBackToFileMetadataWithoutReadingFullRollout() throws {
+        let home = try makeTemporaryDirectory()
+        let rolloutURL = home
+            .appendingPathComponent("sessions/2026/06/26", isDirectory: true)
+            .appendingPathComponent("rollout-large.jsonl")
+        try FileManager.default.createDirectory(
+            at: rolloutURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let content = """
+        {"type":"session_meta","payload":{"id":"large","cwd":"/repo/large"}}
+        \(String(repeating: "x", count: 512 * 1024))
+
+        """
+        try content.write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let modifiedAt = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-06-25T08:09:10Z"))
+        try FileManager.default.setAttributes([.modificationDate: modifiedAt], ofItemAtPath: rolloutURL.path)
+
+        let instance = CodexInstance(name: "Large", codexHome: home.path)
+        let result = CodexSessionService().scanSessions(for: [instance])
+
+        XCTAssertEqual(result.sessions.count, 1)
+        XCTAssertEqual(result.sessions[0].threadID, "large")
+        XCTAssertEqual(result.sessions[0].byteCount, content.utf8.count)
+        XCTAssertEqual(result.sessions[0].updatedAt, modifiedAt)
     }
 
     func testScanSessionsKeepsDuplicateThreadIDsWithDifferentRolloutPaths() throws {
@@ -337,5 +365,9 @@ final class CodexSessionServiceTests: XCTestCase {
         {"type":"event","timestamp":"\(timestamp)","payload":{"text":"hello"}}
 
         """.write(to: url, atomically: true, encoding: .utf8)
+
+        if let modifiedAt = ISO8601DateFormatter().date(from: timestamp) {
+            try FileManager.default.setAttributes([.modificationDate: modifiedAt], ofItemAtPath: url.path)
+        }
     }
 }
