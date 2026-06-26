@@ -143,6 +143,10 @@ struct CodexAnalyticsScanResult: Equatable {
     var skippedFileCount: Int
 }
 
+extension CodexAnalyticsScanResult {
+    static let empty = CodexAnalyticsScanResult(snapshot: .empty, skippedFileCount: 0)
+}
+
 extension CodexAnalyticsSnapshot {
     static let empty = CodexAnalyticsSnapshot(
         sessions: [],

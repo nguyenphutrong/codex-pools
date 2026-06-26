@@ -18,7 +18,8 @@ final class InstanceStore: ObservableObject {
     @Published private(set) var sessionScanResult = CodexSessionScanResult(sessions: [], skippedFileCount: 0)
     @Published private(set) var sessionStatusMessage: String?
     @Published private(set) var isScanningSessions = false
-    @Published private(set) var analyticsScanResult = CodexAnalyticsScanResult(snapshot: .empty, skippedFileCount: 0)
+    @Published private(set) var analyticsScanResult = CodexAnalyticsScanResult.empty
+    @Published private(set) var analyticsScanResultsByKey: [String: CodexAnalyticsScanResult] = [:]
     @Published private(set) var analyticsStatusMessage: String?
     @Published private(set) var isScanningAnalytics = false
     @Published private(set) var isPerformingSessionMutation = false
@@ -39,6 +40,7 @@ final class InstanceStore: ObservableObject {
     private var sessionScanGeneration = 0
     private var analyticsScanGeneration = 0
     private var analyticsScanKey: String?
+    private var scanningAnalyticsKeys: Set<String> = []
 
     var originalInstance: CodexInstance {
         CodexInstance.original(homeDirectory: fileManager.homeDirectoryForCurrentUser)
@@ -346,9 +348,7 @@ final class InstanceStore: ObservableObject {
 
     func refreshAnalytics(for instances: [CodexInstance]? = nil) {
         let instancesSnapshot = instances ?? visibleInstances
-        let scanKey = instancesSnapshot
-            .map { "\($0.id.uuidString):\($0.codexHome)" }
-            .joined(separator: "|")
+        let scanKey = analyticsKey(for: instancesSnapshot)
         if isScanningAnalytics, analyticsScanKey == scanKey {
             return
         }
@@ -357,7 +357,11 @@ final class InstanceStore: ObservableObject {
         let generation = analyticsScanGeneration
 
         analyticsScanTask?.cancel()
+        if let analyticsScanKey {
+            scanningAnalyticsKeys.remove(analyticsScanKey)
+        }
         analyticsScanKey = scanKey
+        scanningAnalyticsKeys.insert(scanKey)
         isScanningAnalytics = true
         analyticsStatusMessage = nil
         analyticsScanTask = Task { [weak self] in
@@ -373,10 +377,20 @@ final class InstanceStore: ObservableObject {
             }
 
             self.analyticsScanResult = result
+            self.analyticsScanResultsByKey[scanKey] = result
             self.analyticsStatusMessage = "Loaded \(result.snapshot.sessions.count) analytics session(s)."
-            self.isScanningAnalytics = false
+            self.scanningAnalyticsKeys.remove(scanKey)
+            self.isScanningAnalytics = !self.scanningAnalyticsKeys.isEmpty
             self.analyticsScanKey = nil
         }
+    }
+
+    func analyticsResult(for instances: [CodexInstance]? = nil) -> CodexAnalyticsScanResult {
+        analyticsScanResultsByKey[analyticsKey(for: instances ?? visibleInstances)] ?? .empty
+    }
+
+    func isScanningAnalytics(for instances: [CodexInstance]? = nil) -> Bool {
+        scanningAnalyticsKeys.contains(analyticsKey(for: instances ?? visibleInstances))
     }
 
     func cancelSessionRefresh() {
@@ -391,6 +405,7 @@ final class InstanceStore: ObservableObject {
         analyticsScanTask?.cancel()
         analyticsScanTask = nil
         analyticsScanKey = nil
+        scanningAnalyticsKeys.removeAll()
         isScanningAnalytics = false
     }
 
@@ -424,7 +439,7 @@ final class InstanceStore: ObservableObject {
             case .success(let summary):
                 self.sessionStatusMessage = "Copied \(summary.copiedSessionCount) session(s) to \(target.managedAppName)."
                 self.refreshSessions()
-                self.refreshAnalytics()
+                self.refreshAnalytics(for: self.selectedInstance.map { [$0] })
             case .failure(let error):
                 self.errorMessage = "Could not copy sessions: \(error.localizedDescription)"
             }
@@ -459,7 +474,7 @@ final class InstanceStore: ObservableObject {
             case .success(let summary):
                 self.sessionStatusMessage = "Synced \(summary.addedSessionCount + summary.updatedSessionCount) session(s) across \(summary.mutatedInstanceCount) instance(s)."
                 self.refreshSessions()
-                self.refreshAnalytics()
+                self.refreshAnalytics(for: self.selectedInstance.map { [$0] })
             case .failure(let error):
                 self.errorMessage = "Could not sync sessions: \(error.localizedDescription)"
             }
@@ -491,11 +506,17 @@ final class InstanceStore: ObservableObject {
             case .success(let summary):
                 self.sessionStatusMessage = "Rebuilt \(summary.indexedSessionCount) session index entries for \(instance.managedAppName)."
                 self.refreshSessions()
-                self.refreshAnalytics()
+                self.refreshAnalytics(for: [instance])
             case .failure(let error):
                 self.errorMessage = "Could not repair session index: \(error.localizedDescription)"
             }
         }
+    }
+
+    private func analyticsKey(for instances: [CodexInstance]) -> String {
+        instances
+            .map { "\($0.id.uuidString):\($0.codexHome)" }
+            .joined(separator: "|")
     }
 
     private func startRunningAppsObserver() {

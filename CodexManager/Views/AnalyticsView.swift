@@ -8,8 +8,8 @@ struct AnalyticsView: View {
 
     var body: some View {
         AnalyticsContent(
-            snapshot: store.analyticsScanResult.snapshot,
-            isScanning: store.isScanningAnalytics,
+            snapshot: store.analyticsResult().snapshot,
+            isScanning: store.isScanningAnalytics(),
             selection: $selection,
             projectFilter: $projectFilter,
             title: "Analytics",
@@ -18,7 +18,7 @@ struct AnalyticsView: View {
         )
         .frame(minWidth: 860, minHeight: 620)
         .onAppear {
-            if store.analyticsScanResult.snapshot.sessions.isEmpty {
+            if store.analyticsResult().snapshot.sessions.isEmpty {
                 store.refreshAnalytics()
             }
         }

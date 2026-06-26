@@ -23,8 +23,8 @@ struct InstanceDetailView: View {
                 rebuildWarning
             }
             AnalyticsContent(
-                snapshot: store.analyticsScanResult.snapshot,
-                isScanning: store.isScanningAnalytics,
+                snapshot: store.analyticsResult(for: [draft]).snapshot,
+                isScanning: store.isScanningAnalytics(for: [draft]),
                 selection: $analyticsSection,
                 projectFilter: $analyticsProjectFilter,
                 title: "Codex Analytics",
