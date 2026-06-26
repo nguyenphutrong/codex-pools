@@ -3,7 +3,6 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var store: InstanceStore
     @State private var isShowingSessionBrowser = false
-    @State private var isShowingAnalytics = false
 
     var body: some View {
         NavigationSplitView {
@@ -45,13 +44,6 @@ struct ContentView: View {
         .toolbar {
             ToolbarItemGroup {
                 Button {
-                    isShowingAnalytics = true
-                } label: {
-                    Label("Analytics", systemImage: "chart.bar.xaxis")
-                }
-                .disabled(store.visibleInstances.isEmpty)
-
-                Button {
                     isShowingSessionBrowser = true
                 } label: {
                     Label("Sessions", systemImage: "text.bubble")
@@ -78,10 +70,6 @@ struct ContentView: View {
         }
         .sheet(isPresented: $isShowingSessionBrowser) {
             SessionBrowserView()
-                .environmentObject(store)
-        }
-        .sheet(isPresented: $isShowingAnalytics) {
-            AnalyticsView()
                 .environmentObject(store)
         }
     }

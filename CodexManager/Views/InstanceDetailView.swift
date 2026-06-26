@@ -8,6 +8,8 @@ struct InstanceDetailView: View {
     @State private var duplicateName = ""
     @State private var isShowingDuplicateSheet = false
     @State private var isShowingDeleteDialog = false
+    @State private var analyticsSection: AnalyticsSection = .dashboard
+    @State private var analyticsProjectFilter: String?
 
     init(instance: CodexInstance) {
         self.instance = instance
@@ -15,140 +17,31 @@ struct InstanceDetailView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                HStack(alignment: .center, spacing: 16) {
-                    IconPickerView(iconPath: $draft.iconPath)
-                        .disabled(isReadonly)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(draft.name.isEmpty ? "Untitled Instance" : draft.name)
-                            .font(.title2.weight(.semibold))
-                        Text(draft.codexHome)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        HStack(spacing: 8) {
-                            if isRunning {
-                                InstanceStateBadge(title: "Running", systemImage: "circle.fill", tint: .green)
-                            }
-                            if isReadonly {
-                                InstanceStateBadge(title: "Readonly", systemImage: "lock", tint: .secondary)
-                            } else {
-                                BundleStatusBadge(status: draft.bundleStatus)
-                            }
-                        }
-                    }
-                }
-                .padding(12)
-                .liquidGlassPanel()
-            }
-
+        VStack(spacing: 0) {
+            instanceHeader
             if shouldShowRebuildWarning {
-                Section {
-                    Label(
-                        "\(draft.managedAppName) is running and its app bundle needs to be rebuilt. Quit it before launching again so Codex Pools can prepare the updated bundle.",
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .foregroundStyle(.orange)
-                    .font(.callout)
-                }
+                rebuildWarning
             }
-
-            Section("Configuration") {
-                TextField("Name", text: nameBinding)
-                    .disabled(isReadonly)
-                TextField("CODEX_HOME", text: $draft.codexHome)
-                    .disabled(isReadonly)
-            }
-
-            Section("Environment") {
-                EnvVarEditorView(variables: $draft.extraEnvVars)
-                    .disabled(isReadonly)
-            }
-
-            Section("Launch Arguments") {
-                LaunchArgsEditorView(arguments: $draft.launchArgs)
-                    .disabled(isReadonly)
-            }
-
-            Section("Activity") {
-                LabeledContent("Created", value: draft.createdAt.formatted(date: .abbreviated, time: .shortened))
-                LabeledContent("Last launched", value: lastLaunchedText)
-            }
-
-            Section {
-                HStack {
-                    Button {
-                        Task { await store.launch(draft) }
-                    } label: {
-                        if isLaunching {
-                            HStack(spacing: 6) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Launching")
-                            }
-                        } else {
-                            Label("Launch", systemImage: "play.fill")
-                        }
-                    }
-                    .liquidGlassButtonStyle(.prominent)
-                    .keyboardShortcut(.return, modifiers: [.command])
-                    .disabled(isReadonly || !canSave || isLaunching)
-
-                    Button {
-                        store.quit(draft)
-                    } label: {
-                        Label("Quit", systemImage: "stop.fill")
-                    }
-                    .liquidGlassButtonStyle()
-                    .disabled(isReadonly || !isRunning || isLaunching)
-
-                    Button {
-                        Task { await store.restart(draft) }
-                    } label: {
-                        Label("Restart", systemImage: "arrow.clockwise")
-                    }
-                    .liquidGlassButtonStyle()
-                    .disabled(isReadonly || !isRunning || !canSave || isLaunching)
-
-                    Button {
-                        store.update(draft)
-                    } label: {
-                        Label("Save", systemImage: "checkmark")
-                    }
-                    .liquidGlassButtonStyle()
-                    .keyboardShortcut("s", modifiers: [.command])
-                    .disabled(isReadonly || !canSave || isLaunching)
-
-                    Button {
-                        duplicateName = "\(draft.name) Copy"
-                        isShowingDuplicateSheet = true
-                    } label: {
-                        Label("Duplicate", systemImage: "plus.square.on.square")
-                    }
-                    .liquidGlassButtonStyle()
-                    .disabled(isReadonly)
-
-                    Spacer()
-
-                    Button(role: .destructive) {
-                        isShowingDeleteDialog = true
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                    .liquidGlassButtonStyle()
-                    .disabled(isReadonly)
-                }
-                .padding(10)
-                .liquidGlassPanel(cornerRadius: 14)
-            }
+            AnalyticsContent(
+                snapshot: store.analyticsScanResult.snapshot,
+                isScanning: store.isScanningAnalytics,
+                selection: $analyticsSection,
+                projectFilter: $analyticsProjectFilter,
+                title: "Codex Analytics",
+                subtitle: draft.codexHome,
+                onRefresh: { store.refreshAnalytics(for: [draft]) }
+            )
         }
-        .formStyle(.grouped)
-        .padding(24)
         .navigationTitle(draft.name)
         .id(instance.id)
+        .onAppear {
+            store.refreshAnalytics(for: [draft])
+        }
         .onChange(of: instance) { newInstance in
             draft = newInstance
+            analyticsSection = .dashboard
+            analyticsProjectFilter = nil
+            store.refreshAnalytics(for: [newInstance])
         }
         .sheet(isPresented: $isShowingDuplicateSheet) {
             duplicateSheet
@@ -168,6 +61,84 @@ struct InstanceDetailView: View {
         } message: {
             Text("Deleting CODEX_HOME is permanent. Keep it unless you are sure this instance's files are no longer needed.")
         }
+    }
+
+    private var instanceHeader: some View {
+        HStack(alignment: .center, spacing: 14) {
+            IconPickerView(iconPath: $draft.iconPath)
+                .disabled(isReadonly)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(draft.name.isEmpty ? "Untitled Instance" : draft.name)
+                    .font(.title2.weight(.semibold))
+                Text(draft.codexHome)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    if isRunning {
+                        InstanceStateBadge(title: "Running", systemImage: "circle.fill", tint: .green)
+                    }
+                    if isReadonly {
+                        InstanceStateBadge(title: "Readonly", systemImage: "lock", tint: .secondary)
+                    } else {
+                        BundleStatusBadge(status: draft.bundleStatus)
+                    }
+                    Text("Last launched \(lastLaunchedText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            Button {
+                Task { await store.launch(draft) }
+            } label: {
+                if isLaunching {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Launching")
+                    }
+                } else {
+                    Label("Launch", systemImage: "play.fill")
+                }
+            }
+            .liquidGlassButtonStyle(.prominent)
+            .keyboardShortcut(.return, modifiers: [.command])
+            .disabled(isReadonly || !canSave || isLaunching)
+
+            Button {
+                store.quit(draft)
+            } label: {
+                Label("Quit", systemImage: "stop.fill")
+            }
+            .liquidGlassButtonStyle()
+            .disabled(isReadonly || !isRunning || isLaunching)
+
+            Button {
+                Task { await store.restart(draft) }
+            } label: {
+                Label("Restart", systemImage: "arrow.clockwise")
+            }
+            .liquidGlassButtonStyle()
+            .disabled(isReadonly || !isRunning || !canSave || isLaunching)
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 16)
+    }
+
+    private var rebuildWarning: some View {
+        Label(
+            "\(draft.managedAppName) is running and its app bundle needs to be rebuilt. Quit it before launching again so Codex Pools can prepare the updated bundle.",
+            systemImage: "exclamationmark.triangle.fill"
+        )
+        .foregroundStyle(.orange)
+        .font(.callout)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 22)
+        .padding(.bottom, 10)
     }
 
     private var duplicateSheet: some View {

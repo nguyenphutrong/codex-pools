@@ -343,10 +343,10 @@ final class InstanceStore: ObservableObject {
         }
     }
 
-    func refreshAnalytics() {
+    func refreshAnalytics(for instances: [CodexInstance]? = nil) {
         analyticsScanGeneration += 1
         let generation = analyticsScanGeneration
-        let instancesSnapshot = visibleInstances
+        let instancesSnapshot = instances ?? visibleInstances
 
         analyticsScanTask?.cancel()
         isScanningAnalytics = true

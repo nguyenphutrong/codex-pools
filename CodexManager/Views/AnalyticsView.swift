@@ -3,46 +3,82 @@ import SwiftUI
 
 struct AnalyticsView: View {
     @EnvironmentObject private var store: InstanceStore
-    @Environment(\.dismiss) private var dismiss
     @State private var selection: AnalyticsSection = .dashboard
     @State private var projectFilter: String?
 
     var body: some View {
-        NavigationSplitView {
-            List(AnalyticsSection.allCases, selection: $selection) { section in
-                Label(section.title, systemImage: section.systemImage)
-                    .tag(section)
-            }
-            .listStyle(.sidebar)
-            .navigationTitle("Analytics")
-            .toolbar {
-                ToolbarItem {
-                    Button {
-                        store.refreshAnalytics()
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(store.isScanningAnalytics)
-                }
-            }
-        } detail: {
-            detail
-                .frame(minWidth: 860, minHeight: 620)
-        }
+        AnalyticsContent(
+            snapshot: store.analyticsScanResult.snapshot,
+            isScanning: store.isScanningAnalytics,
+            selection: $selection,
+            projectFilter: $projectFilter,
+            title: "Analytics",
+            subtitle: nil,
+            onRefresh: { store.refreshAnalytics() }
+        )
+        .frame(minWidth: 860, minHeight: 620)
         .onAppear {
             if store.analyticsScanResult.snapshot.sessions.isEmpty {
                 store.refreshAnalytics()
             }
         }
-        .onDisappear {
-            store.cancelAnalyticsRefresh()
+    }
+}
+
+struct AnalyticsContent: View {
+    let snapshot: CodexAnalyticsSnapshot
+    let isScanning: Bool
+    @Binding var selection: AnalyticsSection
+    @Binding var projectFilter: String?
+    var title: String
+    var subtitle: String?
+    var onRefresh: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            detail
         }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.title2.weight(.semibold))
+                if let subtitle {
+                    Text(subtitle)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            Picker("Analytics Section", selection: $selection) {
+                ForEach(AnalyticsSection.allCases) { section in
+                    Label(section.title, systemImage: section.systemImage)
+                        .tag(section)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 420)
+
+            Button {
+                onRefresh()
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+            .disabled(isScanning)
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 14)
     }
 
     @ViewBuilder
     private var detail: some View {
-        let snapshot = store.analyticsScanResult.snapshot
-        if store.isScanningAnalytics && snapshot.sessions.isEmpty {
+        if isScanning && snapshot.sessions.isEmpty {
             AnalyticsLoadingView()
         } else if snapshot.sessions.isEmpty {
             AnalyticsEmptyView()
@@ -61,7 +97,7 @@ struct AnalyticsView: View {
     }
 }
 
-private enum AnalyticsSection: String, CaseIterable, Identifiable {
+enum AnalyticsSection: String, CaseIterable, Identifiable {
     case dashboard
     case sessions
     case projects
