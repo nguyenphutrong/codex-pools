@@ -3,15 +3,29 @@ import Foundation
 
 struct LaunchService {
     private let bundleCloneService = BundleCloneService()
+    private let fileManager: FileManager
+    private let userDataRootURL: URL
+
+    init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+
+        self.userDataRootURL = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library")
+            .appendingPathComponent("Application Support")
+            .appendingPathComponent("Codex Pools")
+            .appendingPathComponent("User Data", isDirectory: true)
+    }
 
     func launch(instance: CodexInstance) async throws {
         let homePath = NSString(string: instance.codexHome).expandingTildeInPath
+        let userDataURL = userDataDirectoryURL(for: instance)
         let appURL = try bundleCloneService.prepareBundle(for: instance)
 
-        try FileManager.default.createDirectory(
+        try fileManager.createDirectory(
             at: URL(fileURLWithPath: homePath, isDirectory: true),
             withIntermediateDirectories: true
         )
+        try fileManager.createDirectory(at: userDataURL, withIntermediateDirectories: true)
 
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
@@ -19,7 +33,9 @@ struct LaunchService {
         configuration.arguments = [
             // Local clones are re-signed, so Chromium Keychain ACL prompts can repeat.
             "--use-mock-keychain"
-        ] + instance.launchArgs.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        ] + sanitizedLaunchArgs(from: instance.launchArgs) + [
+            "--user-data-dir=\(userDataURL.path)"
+        ]
 
         var environment = ProcessInfo.processInfo.environment
         environment.merge(instance.extraEnvVars) { _, new in new }
@@ -43,6 +59,7 @@ struct LaunchService {
 
     func removeManagedBundle(for instance: CodexInstance) throws {
         try bundleCloneService.removeBundle(for: instance)
+        try removeManagedUserData(for: instance)
     }
 
     func bundleStatus(for instance: CodexInstance) -> CodexInstance.BundleStatus {
@@ -59,6 +76,46 @@ struct LaunchService {
                 throw LaunchServiceError.couldNotTerminate(instance.managedAppName)
             }
         }
+    }
+}
+
+private extension LaunchService {
+    func userDataDirectoryURL(for instance: CodexInstance) -> URL {
+        userDataRootURL.appendingPathComponent(instance.id.uuidString, isDirectory: true)
+    }
+
+    func removeManagedUserData(for instance: CodexInstance) throws {
+        let url = userDataDirectoryURL(for: instance)
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try fileManager.removeItem(at: url)
+    }
+
+    func sanitizedLaunchArgs(from launchArgs: [String]) -> [String] {
+        var result: [String] = []
+        var shouldSkipNext = false
+
+        for arg in launchArgs {
+            let trimmed = arg.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            if shouldSkipNext {
+                shouldSkipNext = false
+                continue
+            }
+
+            if trimmed == "--user-data-dir" {
+                shouldSkipNext = true
+                continue
+            }
+
+            if trimmed.hasPrefix("--user-data-dir=") {
+                continue
+            }
+
+            result.append(trimmed)
+        }
+
+        return result
     }
 }
 
