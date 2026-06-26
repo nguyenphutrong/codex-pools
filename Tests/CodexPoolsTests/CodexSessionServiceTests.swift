@@ -377,6 +377,68 @@ final class CodexSessionServiceTests: XCTestCase {
         ))
     }
 
+    func testScanAnalyticsParsesCodexMessagesToolsModelsAndCumulativeTokens() throws {
+        let home = try makeTemporaryDirectory()
+        let rolloutURL = home
+            .appendingPathComponent("sessions/2026/06/26", isDirectory: true)
+            .appendingPathComponent("rollout-analytics.jsonl")
+        try FileManager.default.createDirectory(
+            at: rolloutURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try """
+        {"type":"session_meta","payload":{"id":"analytics-thread","cwd":"/repo/analytics","timestamp":"2026-06-26T01:00:00Z","source":"cli","originator":"codex","cli_version":"1.2.3","model_provider":"openai"}}
+        {"type":"turn_context","timestamp":"2026-06-26T01:01:00Z","payload":{"model":"openai/gpt-5-20260101"}}
+        {"type":"response_item","timestamp":"2026-06-26T01:02:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>ignored</environment_context>"}]}}
+        {"type":"response_item","timestamp":"2026-06-26T01:03:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Fix analytics parser please"}]}}
+        {"type":"response_item","timestamp":"2026-06-26T01:04:00Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I will inspect it."}]}}
+        {"type":"response_item","timestamp":"2026-06-26T01:05:00Z","payload":{"type":"function_call","name":"exec_command","call_id":"call-1","arguments":"{\\"cmd\\":\\"swift test\\"}"}}
+        {"type":"event_msg","timestamp":"2026-06-26T01:06:00Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":100,"output_tokens":100,"total_tokens":1100}}}}
+        {"type":"event_msg","timestamp":"2026-06-26T01:07:00Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1500,"cached_input_tokens":150,"output_tokens":170,"total_tokens":1670}}}}
+
+        """.write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let instance = CodexInstance(name: "Analytics", codexHome: home.path)
+        let result = CodexSessionService().scanAnalytics(for: [instance])
+        let session = try XCTUnwrap(result.snapshot.sessions.first)
+
+        XCTAssertEqual(result.skippedFileCount, 0)
+        XCTAssertEqual(session.title, "Fix analytics parser please")
+        XCTAssertEqual(session.workspacePath, "/repo/analytics")
+        XCTAssertEqual(session.source, "cli")
+        XCTAssertEqual(session.cliVersion, "1.2.3")
+        XCTAssertEqual(session.userMessageCount, 1)
+        XCTAssertEqual(session.assistantMessageCount, 1)
+        XCTAssertEqual(session.toolCalls, [CodexToolCallSummary(name: "exec_command", count: 1)])
+        XCTAssertEqual(session.primaryModel, "openai/gpt-5-20260101")
+        XCTAssertEqual(session.tokenUsage.inputTokens, 1_350)
+        XCTAssertEqual(session.tokenUsage.cacheReadTokens, 150)
+        XCTAssertEqual(session.tokenUsage.outputTokens, 170)
+        XCTAssertGreaterThan(session.estimatedCost ?? 0, 0)
+
+        XCTAssertEqual(result.snapshot.overview.totalSessions, 1)
+        XCTAssertEqual(result.snapshot.overview.totalProjects, 1)
+        XCTAssertEqual(result.snapshot.projects.first?.folder, "/repo/analytics")
+        XCTAssertEqual(result.snapshot.costs.byModel.first?.name, "gpt-5")
+    }
+
+    func testModelPricingNormalizesVersionedAndProviderPrefixedNames() throws {
+        XCTAssertEqual(CodexModelPricing.normalizedModelName("openai/gpt-5-20260101"), "gpt-5")
+        XCTAssertEqual(CodexModelPricing.normalizedModelName("MODEL_GPT_4O_MINI"), "gpt-4o-mini")
+        XCTAssertNil(CodexModelPricing.normalizedModelName("unknown-model"))
+
+        let cost = try XCTUnwrap(CodexModelPricing.estimatedCost(
+            for: "openai/gpt-5-20260101",
+            usage: CodexTokenUsage(
+                inputTokens: 1_000_000,
+                outputTokens: 1_000_000,
+                cacheReadTokens: 1_000_000,
+                cacheWriteTokens: 0
+            )
+        ))
+        XCTAssertEqual(cost, 11.375, accuracy: 0.0001)
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("codex-pools-session-tests-\(UUID().uuidString)", isDirectory: true)

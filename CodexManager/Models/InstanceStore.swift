@@ -18,6 +18,9 @@ final class InstanceStore: ObservableObject {
     @Published private(set) var sessionScanResult = CodexSessionScanResult(sessions: [], skippedFileCount: 0)
     @Published private(set) var sessionStatusMessage: String?
     @Published private(set) var isScanningSessions = false
+    @Published private(set) var analyticsScanResult = CodexAnalyticsScanResult(snapshot: .empty, skippedFileCount: 0)
+    @Published private(set) var analyticsStatusMessage: String?
+    @Published private(set) var isScanningAnalytics = false
     @Published private(set) var isPerformingSessionMutation = false
     @Published private(set) var runningInstanceIDs: Set<CodexInstance.ID> = []
     @Published private var launchingInstanceIDs: Set<CodexInstance.ID> = []
@@ -31,8 +34,10 @@ final class InstanceStore: ObservableObject {
     private let iconDirectoryURL: URL
     private var runningAppsCancellable: AnyCancellable?
     private var sessionScanTask: Task<Void, Never>?
+    private var analyticsScanTask: Task<Void, Never>?
     private var sessionMutationTask: Task<Void, Never>?
     private var sessionScanGeneration = 0
+    private var analyticsScanGeneration = 0
 
     var originalInstance: CodexInstance {
         CodexInstance.original(homeDirectory: fileManager.homeDirectoryForCurrentUser)
@@ -338,11 +343,44 @@ final class InstanceStore: ObservableObject {
         }
     }
 
+    func refreshAnalytics() {
+        analyticsScanGeneration += 1
+        let generation = analyticsScanGeneration
+        let instancesSnapshot = visibleInstances
+
+        analyticsScanTask?.cancel()
+        isScanningAnalytics = true
+        analyticsStatusMessage = nil
+        analyticsScanTask = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                CodexSessionService().scanAnalytics(for: instancesSnapshot)
+            }.value
+
+            guard let self,
+                  !Task.isCancelled,
+                  generation == self.analyticsScanGeneration
+            else {
+                return
+            }
+
+            self.analyticsScanResult = result
+            self.analyticsStatusMessage = "Loaded \(result.snapshot.sessions.count) analytics session(s)."
+            self.isScanningAnalytics = false
+        }
+    }
+
     func cancelSessionRefresh() {
         sessionScanGeneration += 1
         sessionScanTask?.cancel()
         sessionScanTask = nil
         isScanningSessions = false
+    }
+
+    func cancelAnalyticsRefresh() {
+        analyticsScanGeneration += 1
+        analyticsScanTask?.cancel()
+        analyticsScanTask = nil
+        isScanningAnalytics = false
     }
 
     func copySessions(_ sessionIDs: Set<CodexSessionThread.ID>, to targetInstanceID: CodexInstance.ID) {
@@ -375,6 +413,7 @@ final class InstanceStore: ObservableObject {
             case .success(let summary):
                 self.sessionStatusMessage = "Copied \(summary.copiedSessionCount) session(s) to \(target.managedAppName)."
                 self.refreshSessions()
+                self.refreshAnalytics()
             case .failure(let error):
                 self.errorMessage = "Could not copy sessions: \(error.localizedDescription)"
             }
@@ -409,6 +448,7 @@ final class InstanceStore: ObservableObject {
             case .success(let summary):
                 self.sessionStatusMessage = "Synced \(summary.addedSessionCount + summary.updatedSessionCount) session(s) across \(summary.mutatedInstanceCount) instance(s)."
                 self.refreshSessions()
+                self.refreshAnalytics()
             case .failure(let error):
                 self.errorMessage = "Could not sync sessions: \(error.localizedDescription)"
             }
@@ -440,6 +480,7 @@ final class InstanceStore: ObservableObject {
             case .success(let summary):
                 self.sessionStatusMessage = "Rebuilt \(summary.indexedSessionCount) session index entries for \(instance.managedAppName)."
                 self.refreshSessions()
+                self.refreshAnalytics()
             case .failure(let error):
                 self.errorMessage = "Could not repair session index: \(error.localizedDescription)"
             }
