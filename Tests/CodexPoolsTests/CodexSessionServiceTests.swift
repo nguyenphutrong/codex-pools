@@ -46,7 +46,7 @@ final class CodexSessionServiceTests: XCTestCase {
 
         XCTAssertEqual(result.skippedFileCount, 0)
         XCTAssertEqual(result.sessions.count, 1)
-        XCTAssertEqual(result.sessions[0].id, "\(instance.id.uuidString):thread-1")
+        XCTAssertEqual(result.sessions[0].id, "\(instance.id.uuidString):thread-1:sessions/2026/06/26/rollout-thread-1.jsonl")
         XCTAssertEqual(result.sessions[0].threadID, "thread-1")
         XCTAssertEqual(result.sessions[0].title, "Fix checkout bug")
         XCTAssertEqual(result.sessions[0].workspacePath, "/repo/app")
@@ -85,6 +85,29 @@ final class CodexSessionServiceTests: XCTestCase {
         XCTAssertEqual(result.sessions[0].title, "thread-2")
         XCTAssertTrue(result.sessions[0].isArchived)
         XCTAssertEqual(result.sessions[0].lineCount, 2)
+    }
+
+    func testScanSessionsKeepsDuplicateThreadIDsWithDifferentRolloutPaths() throws {
+        let home = try makeTemporaryDirectory()
+        try writeRollout(
+            at: home.appendingPathComponent("sessions/2026/06/26/rollout-one.jsonl"),
+            threadID: "duplicate",
+            title: "Duplicate One",
+            timestamp: "2026-06-26T03:00:00Z"
+        )
+        try writeRollout(
+            at: home.appendingPathComponent("archived_sessions/2026/06/27/rollout-two.jsonl"),
+            threadID: "duplicate",
+            title: "Duplicate Two",
+            timestamp: "2026-06-27T03:00:00Z"
+        )
+        let instance = CodexInstance(name: "Duplicates", codexHome: home.path)
+
+        let result = CodexSessionService().scanSessions(for: [instance])
+
+        XCTAssertEqual(result.sessions.count, 2)
+        XCTAssertEqual(Set(result.sessions.map(\.threadID)), ["duplicate"])
+        XCTAssertEqual(Set(result.sessions.map(\.id)).count, 2)
     }
 
     func testCopySessionsCopiesRolloutAndRepairsIndex() throws {

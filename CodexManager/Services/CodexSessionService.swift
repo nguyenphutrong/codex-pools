@@ -106,7 +106,11 @@ struct CodexSessionService {
             copied.instanceName = targetInstance.managedAppName
             copied.codexHome = targetHomeURL.path
             copied.rolloutPath = targetURL.path
-            copied.id = "\(targetInstance.id.uuidString):\(session.threadID)"
+            copied.id = sessionDisplayID(
+                instanceID: targetInstance.id,
+                threadID: session.threadID,
+                relativeRolloutPath: copied.relativeRolloutPath
+            )
             copiedSessions.append(copied)
         }
 
@@ -311,8 +315,13 @@ struct CodexSessionService {
             ?? latestTimestamp(in: content)
             ?? fileModifiedAt(rolloutURL)
 
+        let relativeRolloutPath = relativePath(from: homeURL, to: rolloutURL)
         return CodexSessionThread(
-            id: "\(instance.id.uuidString):\(threadID)",
+            id: sessionDisplayID(
+                instanceID: instance.id,
+                threadID: threadID,
+                relativeRolloutPath: relativeRolloutPath
+            ),
             threadID: threadID,
             instanceID: instance.id,
             instanceName: instance.managedAppName,
@@ -320,7 +329,7 @@ struct CodexSessionService {
             title: title,
             workspacePath: workspacePath(in: metadata),
             rolloutPath: rolloutURL.path,
-            relativeRolloutPath: relativePath(from: homeURL, to: rolloutURL),
+            relativeRolloutPath: relativeRolloutPath,
             updatedAt: updatedAt,
             byteCount: content.utf8.count,
             lineCount: content.split(whereSeparator: \.isNewline).count,
@@ -496,13 +505,25 @@ struct CodexSessionService {
     ) -> CodexSessionThread {
         var retargeted = session
         let targetHomeURL = codexHomeURL(for: target)
-        retargeted.id = "\(target.id.uuidString):\(session.threadID)"
         retargeted.instanceID = target.id
         retargeted.instanceName = target.managedAppName
         retargeted.codexHome = targetHomeURL.path
         retargeted.rolloutPath = targetURL.path
         retargeted.relativeRolloutPath = relativePath(from: targetHomeURL, to: targetURL)
+        retargeted.id = sessionDisplayID(
+            instanceID: target.id,
+            threadID: session.threadID,
+            relativeRolloutPath: retargeted.relativeRolloutPath
+        )
         return retargeted
+    }
+
+    private func sessionDisplayID(
+        instanceID: CodexInstance.ID,
+        threadID: String,
+        relativeRolloutPath: String
+    ) -> String {
+        "\(instanceID.uuidString):\(threadID):\(relativeRolloutPath)"
     }
 
     private func copyRollout(
