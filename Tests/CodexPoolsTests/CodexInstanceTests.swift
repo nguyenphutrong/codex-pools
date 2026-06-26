@@ -20,6 +20,19 @@ final class CodexInstanceTests: XCTestCase {
         )
     }
 
+    func testOriginalInstanceUsesStableReadonlyDefaults() {
+        let home = URL(fileURLWithPath: "/tmp/test-home", isDirectory: true)
+        let instance = CodexInstance.original(homeDirectory: home)
+
+        XCTAssertEqual(instance.id, CodexInstance.originalID)
+        XCTAssertEqual(instance.kind, .original)
+        XCTAssertEqual(instance.name, "Codex Original")
+        XCTAssertEqual(instance.codexHome, "/tmp/test-home/.codex")
+        XCTAssertTrue(instance.isOriginal)
+        XCTAssertFalse(instance.isEditable)
+        XCTAssertEqual(instance.managedBundleIdentifier, "com.openai.codex")
+    }
+
     func testManagedAppNameFallsBackForBlankNames() {
         let instance = CodexInstance(name: " \n\t ", codexHome: "/tmp/home")
 

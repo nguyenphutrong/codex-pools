@@ -19,6 +19,7 @@ struct InstanceDetailView: View {
             Section {
                 HStack(alignment: .center, spacing: 16) {
                     IconPickerView(iconPath: $draft.iconPath)
+                        .disabled(isReadonly)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(draft.name.isEmpty ? "Untitled Instance" : draft.name)
                             .font(.title2.weight(.semibold))
@@ -30,7 +31,11 @@ struct InstanceDetailView: View {
                             if isRunning {
                                 InstanceStateBadge(title: "Running", systemImage: "circle.fill", tint: .green)
                             }
-                            BundleStatusBadge(status: draft.bundleStatus)
+                            if isReadonly {
+                                InstanceStateBadge(title: "Readonly", systemImage: "lock", tint: .secondary)
+                            } else {
+                                BundleStatusBadge(status: draft.bundleStatus)
+                            }
                         }
                     }
                 }
@@ -51,15 +56,19 @@ struct InstanceDetailView: View {
 
             Section("Configuration") {
                 TextField("Name", text: nameBinding)
+                    .disabled(isReadonly)
                 TextField("CODEX_HOME", text: $draft.codexHome)
+                    .disabled(isReadonly)
             }
 
             Section("Environment") {
                 EnvVarEditorView(variables: $draft.extraEnvVars)
+                    .disabled(isReadonly)
             }
 
             Section("Launch Arguments") {
                 LaunchArgsEditorView(arguments: $draft.launchArgs)
+                    .disabled(isReadonly)
             }
 
             Section("Activity") {
@@ -84,7 +93,7 @@ struct InstanceDetailView: View {
                     }
                     .liquidGlassButtonStyle(.prominent)
                     .keyboardShortcut(.return, modifiers: [.command])
-                    .disabled(!canSave || isLaunching)
+                    .disabled(isReadonly || !canSave || isLaunching)
 
                     Button {
                         store.quit(draft)
@@ -92,7 +101,7 @@ struct InstanceDetailView: View {
                         Label("Quit", systemImage: "stop.fill")
                     }
                     .liquidGlassButtonStyle()
-                    .disabled(!isRunning || isLaunching)
+                    .disabled(isReadonly || !isRunning || isLaunching)
 
                     Button {
                         Task { await store.restart(draft) }
@@ -100,7 +109,7 @@ struct InstanceDetailView: View {
                         Label("Restart", systemImage: "arrow.clockwise")
                     }
                     .liquidGlassButtonStyle()
-                    .disabled(!isRunning || !canSave || isLaunching)
+                    .disabled(isReadonly || !isRunning || !canSave || isLaunching)
 
                     Button {
                         store.update(draft)
@@ -109,7 +118,7 @@ struct InstanceDetailView: View {
                     }
                     .liquidGlassButtonStyle()
                     .keyboardShortcut("s", modifiers: [.command])
-                    .disabled(!canSave || isLaunching)
+                    .disabled(isReadonly || !canSave || isLaunching)
 
                     Button {
                         duplicateName = "\(draft.name) Copy"
@@ -118,6 +127,7 @@ struct InstanceDetailView: View {
                         Label("Duplicate", systemImage: "plus.square.on.square")
                     }
                     .liquidGlassButtonStyle()
+                    .disabled(isReadonly)
 
                     Spacer()
 
@@ -127,6 +137,7 @@ struct InstanceDetailView: View {
                         Label("Delete", systemImage: "trash")
                     }
                     .liquidGlassButtonStyle()
+                    .disabled(isReadonly)
                 }
                 .padding(10)
                 .liquidGlassPanel(cornerRadius: 14)
@@ -193,6 +204,10 @@ struct InstanceDetailView: View {
 
     private var isLaunching: Bool {
         store.isLaunching(draft)
+    }
+
+    private var isReadonly: Bool {
+        draft.isOriginal
     }
 
     private var isRunning: Bool {

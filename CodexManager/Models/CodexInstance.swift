@@ -7,7 +7,13 @@ struct CodexInstance: Identifiable, Codable, Equatable {
         case missingSourceApp
     }
 
+    enum Kind: String, Codable, Equatable {
+        case managed
+        case original
+    }
+
     var id: UUID
+    var kind: Kind
     var name: String
     var iconPath: String?
     var codexHome: String
@@ -19,6 +25,7 @@ struct CodexInstance: Identifiable, Codable, Equatable {
 
     init(
         id: UUID = UUID(),
+        kind: Kind = .managed,
         name: String,
         iconPath: String? = nil,
         codexHome: String,
@@ -29,6 +36,7 @@ struct CodexInstance: Identifiable, Codable, Equatable {
         lastLaunchedAt: Date? = nil
     ) {
         self.id = id
+        self.kind = kind
         self.name = name
         self.iconPath = iconPath
         self.codexHome = codexHome
@@ -43,6 +51,7 @@ struct CodexInstance: Identifiable, Codable, Equatable {
 extension CodexInstance {
     private enum CodingKeys: String, CodingKey {
         case id
+        case kind
         case name
         case iconPath
         case codexHome
@@ -56,6 +65,7 @@ extension CodexInstance {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decodeIfPresent(Kind.self, forKey: .kind) ?? .managed
         name = try container.decode(String.self, forKey: .name)
         iconPath = try container.decodeIfPresent(String.self, forKey: .iconPath)
         codexHome = try container.decode(String.self, forKey: .codexHome)
@@ -69,6 +79,7 @@ extension CodexInstance {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
         try container.encode(name, forKey: .name)
         try container.encodeIfPresent(iconPath, forKey: .iconPath)
         try container.encode(codexHome, forKey: .codexHome)
@@ -81,6 +92,8 @@ extension CodexInstance {
 }
 
 extension CodexInstance {
+    static let originalID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
     static func defaultHomePath(for name: String) -> String {
         InstanceNaming.defaultHomePath(
             for: name,
@@ -88,8 +101,30 @@ extension CodexInstance {
         )
     }
 
+    static func original(homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) -> CodexInstance {
+        CodexInstance(
+            id: originalID,
+            kind: .original,
+            name: "Codex Original",
+            codexHome: homeDirectory.appendingPathComponent(".codex", isDirectory: true).path,
+            bundleStatus: .ready,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    var isOriginal: Bool {
+        kind == .original
+    }
+
+    var isEditable: Bool {
+        kind == .managed
+    }
+
     var managedBundleIdentifier: String {
-        "com.nguyenphutrong.codexpools.instance.\(id.uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
+        if isOriginal {
+            return "com.openai.codex"
+        }
+        return "com.nguyenphutrong.codexpools.instance.\(id.uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
     }
 
     var managedAppName: String {

@@ -34,9 +34,17 @@ final class InstanceStore: ObservableObject {
     private var sessionMutationTask: Task<Void, Never>?
     private var sessionScanGeneration = 0
 
+    var originalInstance: CodexInstance {
+        CodexInstance.original(homeDirectory: fileManager.homeDirectoryForCurrentUser)
+    }
+
+    var visibleInstances: [CodexInstance] {
+        [originalInstance] + instances
+    }
+
     var selectedInstance: CodexInstance? {
-        guard let selectedInstanceID else { return instances.first }
-        return instances.first { $0.id == selectedInstanceID }
+        guard let selectedInstanceID else { return visibleInstances.first }
+        return visibleInstances.first { $0.id == selectedInstanceID } ?? visibleInstances.first
     }
 
     init(fileManager: FileManager = .default) {
@@ -68,15 +76,18 @@ final class InstanceStore: ObservableObject {
         do {
             guard fileManager.fileExists(atPath: configURL.path) else {
                 instances = []
+                selectedInstanceID = visibleInstances.first?.id
                 return
             }
 
             let data = try Data(contentsOf: configURL)
-            instances = try JSONDecoder.instanceDecoder.decode([CodexInstance].self, from: data)
+            instances = try JSONDecoder.instanceDecoder
+                .decode([CodexInstance].self, from: data)
+                .filter(\.isEditable)
             refreshRunningInstances()
 
             if selectedInstanceID == nil {
-                selectedInstanceID = instances.first?.id
+                selectedInstanceID = visibleInstances.first?.id
             }
         } catch {
             errorMessage = "Could not load instances: \(error.localizedDescription)"
@@ -140,6 +151,7 @@ final class InstanceStore: ObservableObject {
     }
 
     func update(_ instance: CodexInstance) {
+        guard instance.isEditable else { return }
         guard let index = instances.firstIndex(where: { $0.id == instance.id }) else { return }
         var updated = instance
         updated.bundleStatus = launchService.bundleStatus(for: updated)
@@ -149,6 +161,7 @@ final class InstanceStore: ObservableObject {
     }
 
     func delete(_ instance: CodexInstance, deleteHomeDirectory: Bool) {
+        guard instance.isEditable else { return }
         do {
             if deleteHomeDirectory {
                 try removeHomeDirectoryIfPresent(instance.codexHome)
@@ -156,7 +169,7 @@ final class InstanceStore: ObservableObject {
             try launchService.removeManagedBundle(for: instance)
 
             instances.removeAll { $0.id == instance.id }
-            selectedInstanceID = instances.first?.id
+            selectedInstanceID = visibleInstances.first?.id
             save()
         } catch {
             errorMessage = "Could not delete instance: \(error.localizedDescription)"
@@ -164,6 +177,7 @@ final class InstanceStore: ObservableObject {
     }
 
     func duplicate(_ instance: CodexInstance, newName: String) {
+        guard instance.isEditable else { return }
         let trimmedName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
 
@@ -216,6 +230,7 @@ final class InstanceStore: ObservableObject {
     }
 
     func launch(_ instance: CodexInstance) async {
+        guard instance.isEditable else { return }
         guard !isLaunching(instance) else { return }
         launchingInstanceIDs.insert(instance.id)
         defer {
@@ -236,6 +251,7 @@ final class InstanceStore: ObservableObject {
     }
 
     func quit(_ instance: CodexInstance) {
+        guard instance.isEditable else { return }
         do {
             try launchService.quit(instance: instance)
             refreshRunningInstances()
@@ -245,6 +261,7 @@ final class InstanceStore: ObservableObject {
     }
 
     func restart(_ instance: CodexInstance) async {
+        guard instance.isEditable else { return }
         guard !isLaunching(instance) else { return }
 
         quit(instance)
@@ -275,15 +292,16 @@ final class InstanceStore: ObservableObject {
 
     func importPendingInstances(mode: ImportMode) {
         guard let importedInstances = pendingImportedInstances else { return }
+        let managedImportedInstances = importedInstances.filter(\.isEditable)
 
         switch mode {
         case .merge:
-            merge(importedInstances)
+            merge(managedImportedInstances)
         case .replace:
-            instances = importedInstances
+            instances = managedImportedInstances
         }
 
-        selectedInstanceID = importedInstances.first?.id ?? instances.first?.id
+        selectedInstanceID = managedImportedInstances.first?.id ?? visibleInstances.first?.id
         pendingImportedInstances = nil
         save()
     }
@@ -299,7 +317,7 @@ final class InstanceStore: ObservableObject {
     func refreshSessions() {
         sessionScanGeneration += 1
         let generation = sessionScanGeneration
-        let instancesSnapshot = instances
+        let instancesSnapshot = visibleInstances
 
         sessionScanTask?.cancel()
         isScanningSessions = true
@@ -329,12 +347,12 @@ final class InstanceStore: ObservableObject {
 
     func copySessions(_ sessionIDs: Set<CodexSessionThread.ID>, to targetInstanceID: CodexInstance.ID) {
         guard !isPerformingSessionMutation,
-              let target = instances.first(where: { $0.id == targetInstanceID })
+              let target = visibleInstances.first(where: { $0.id == targetInstanceID })
         else {
             return
         }
 
-        let instancesSnapshot = instances
+        let instancesSnapshot = visibleInstances
         isPerformingSessionMutation = true
         sessionMutationTask = Task { [weak self] in
             let result: Result<CodexSessionCopySummary, Error> = await Task.detached(priority: .userInitiated) {
@@ -368,7 +386,7 @@ final class InstanceStore: ObservableObject {
             return
         }
 
-        let instancesSnapshot = instances
+        let instancesSnapshot = visibleInstances
         let runningInstanceIDsSnapshot = runningInstanceIDs
         isPerformingSessionMutation = true
         sessionMutationTask = Task { [weak self] in
@@ -399,7 +417,7 @@ final class InstanceStore: ObservableObject {
 
     func repairSessionIndex(for instanceID: CodexInstance.ID) {
         guard !isPerformingSessionMutation,
-              let instance = instances.first(where: { $0.id == instanceID })
+              let instance = visibleInstances.first(where: { $0.id == instanceID })
         else {
             return
         }
@@ -442,7 +460,7 @@ final class InstanceStore: ObservableObject {
             NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
         )
         runningInstanceIDs = Set(
-            instances
+            visibleInstances
                 .filter { runningBundleIdentifiers.contains($0.managedBundleIdentifier) }
                 .map(\.id)
         )

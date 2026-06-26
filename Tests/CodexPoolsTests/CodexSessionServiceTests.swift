@@ -186,6 +186,41 @@ final class CodexSessionServiceTests: XCTestCase {
         XCTAssertTrue(repairedIndex.contains(#""thread_name":"Copied Session""#))
     }
 
+    func testCopySessionsCopiesFromOriginalVirtualInstance() throws {
+        let originalHome = try makeTemporaryDirectory()
+        let targetHome = try makeTemporaryDirectory()
+        try writeRollout(
+            at: originalHome.appendingPathComponent("sessions/2026/06/26/rollout-original.jsonl"),
+            threadID: "original-thread",
+            title: "Original Session",
+            timestamp: "2026-06-26T03:04:05Z"
+        )
+
+        let original = CodexInstance.original(homeDirectory: originalHome.deletingLastPathComponent())
+        let source = CodexInstance(
+            id: original.id,
+            kind: original.kind,
+            name: original.name,
+            codexHome: originalHome.path,
+            bundleStatus: original.bundleStatus,
+            createdAt: original.createdAt
+        )
+        let target = CodexInstance(name: "Target", codexHome: targetHome.path)
+        let service = CodexSessionService()
+        let scanned = service.scanSessions(for: [source])
+
+        let summary = try service.copySessions(
+            sessionIDs: Set(scanned.sessions.map(\.id)),
+            to: target,
+            from: [source, target]
+        )
+
+        XCTAssertEqual(summary.copiedSessionCount, 1)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: targetHome.appendingPathComponent("sessions/2026/06/26/rollout-original.jsonl").path
+        ))
+    }
+
     func testCopySessionsBacksUpOverwrittenTargetFiles() throws {
         let sourceHome = try makeTemporaryDirectory()
         let targetHome = try makeTemporaryDirectory()

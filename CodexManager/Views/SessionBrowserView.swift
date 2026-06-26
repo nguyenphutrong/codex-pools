@@ -22,8 +22,8 @@ struct SessionBrowserView: View {
         .frame(minWidth: 980, minHeight: 620)
         .onAppear {
             store.refreshSessions()
-            targetInstanceID = store.instances.first?.id
-            repairInstanceID = store.selectedInstance?.id ?? store.instances.first?.id
+            targetInstanceID = store.visibleInstances.first?.id
+            repairInstanceID = store.selectedInstance?.id ?? store.visibleInstances.first?.id
         }
         .onDisappear {
             store.cancelSessionRefresh()
@@ -173,12 +173,12 @@ struct SessionBrowserView: View {
             .disabled(selectedSessions.count != 1 || store.isScanningSessions)
 
             Picker("Copy to", selection: targetSelection) {
-                ForEach(store.instances) { instance in
+                ForEach(store.visibleInstances) { instance in
                     Text(instance.managedAppName).tag(Optional(instance.id))
                 }
             }
             .frame(width: 220)
-            .disabled(store.instances.isEmpty || store.isPerformingSessionMutation)
+            .disabled(store.visibleInstances.isEmpty || store.isPerformingSessionMutation)
 
             Button {
                 pendingAction = .copy(selectedSessionIDs.count, targetName)
@@ -191,12 +191,12 @@ struct SessionBrowserView: View {
                 .frame(height: 18)
 
             Picker("Repair", selection: repairSelection) {
-                ForEach(store.instances) { instance in
+                ForEach(store.visibleInstances) { instance in
                     Text(instance.managedAppName).tag(Optional(instance.id))
                 }
             }
             .frame(width: 220)
-            .disabled(store.instances.isEmpty || store.isPerformingSessionMutation)
+            .disabled(store.visibleInstances.isEmpty || store.isPerformingSessionMutation)
 
             Button {
                 pendingAction = .repair(repairTargetName)
@@ -210,7 +210,7 @@ struct SessionBrowserView: View {
             } label: {
                 Label("Sync Idle", systemImage: "arrow.triangle.2.circlepath")
             }
-            .disabled(store.instances.count < 2 || store.isPerformingSessionMutation)
+            .disabled(store.visibleInstances.count < 2 || store.isPerformingSessionMutation)
 
             Spacer()
 
@@ -267,20 +267,20 @@ struct SessionBrowserView: View {
             return "Scanning session metadata..."
         }
         if skipped == 0 {
-            return "\(total) session(s) across \(store.instances.count) instance(s)"
+            return "\(total) session(s) across \(store.visibleInstances.count) instance(s)"
         }
         return "\(total) session(s), \(skipped) unreadable rollout file(s)"
     }
 
     private var targetName: String {
         targetInstanceID
-            .flatMap { id in store.instances.first { $0.id == id }?.managedAppName }
+            .flatMap { id in store.visibleInstances.first { $0.id == id }?.managedAppName }
             ?? "the selected instance"
     }
 
     private var repairTargetName: String {
         repairInstanceID
-            .flatMap { id in store.instances.first { $0.id == id }?.managedAppName }
+            .flatMap { id in store.visibleInstances.first { $0.id == id }?.managedAppName }
             ?? "the selected instance"
     }
 

@@ -7,7 +7,7 @@ struct InstanceListView: View {
     var body: some View {
         VStack(spacing: 0) {
             List(selection: $store.selectedInstanceID) {
-                ForEach(store.instances) { instance in
+                ForEach(store.visibleInstances) { instance in
                     InstanceRow(instance: instance)
                         .tag(instance.id)
                 }
@@ -55,7 +55,11 @@ private struct InstanceRow: View {
                         InstanceStateBadge(title: "Running", systemImage: "circle.fill", tint: .green)
                     }
 
-                    BundleStatusBadge(status: instance.bundleStatus)
+                    if instance.isOriginal {
+                        InstanceStateBadge(title: "Original", systemImage: "lock", tint: .secondary)
+                    } else {
+                        BundleStatusBadge(status: instance.bundleStatus)
+                    }
                 }
             }
         }
@@ -63,6 +67,9 @@ private struct InstanceRow: View {
     }
 
     private var lastLaunchedText: String {
+        if instance.isOriginal {
+            return "Default CODEX_HOME"
+        }
         guard let lastLaunchedAt = instance.lastLaunchedAt else {
             return "Never launched"
         }

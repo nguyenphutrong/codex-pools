@@ -36,6 +36,7 @@ final class CodexInstanceCodingTests: XCTestCase {
         let decoded = try JSONDecoder.instanceDecoder.decode(CodexInstance.self, from: data)
 
         XCTAssertEqual(decoded.id, UUID(uuidString: "11111111-2222-3333-4444-555555555555"))
+        XCTAssertEqual(decoded.kind, .managed)
         XCTAssertEqual(decoded.name, "Legacy Pool")
         XCTAssertNil(decoded.iconPath)
         XCTAssertEqual(decoded.codexHome, "/tmp/legacy")

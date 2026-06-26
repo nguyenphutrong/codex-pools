@@ -68,16 +68,17 @@ struct CodexPoolsApp: App {
                         Task { await store.launch(selected) }
                     }
                     .keyboardShortcut(.return, modifiers: [.command])
+                    .disabled(selected.isOriginal)
 
                     Button("Quit Instance") {
                         store.quit(selected)
                     }
-                    .disabled(!store.isRunning(selected))
+                    .disabled(selected.isOriginal || !store.isRunning(selected))
 
                     Button("Restart Instance") {
                         Task { await store.restart(selected) }
                     }
-                    .disabled(!store.isRunning(selected))
+                    .disabled(selected.isOriginal || !store.isRunning(selected))
                 }
             }
 

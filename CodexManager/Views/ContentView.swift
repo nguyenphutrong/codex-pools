@@ -48,7 +48,7 @@ struct ContentView: View {
                 } label: {
                     Label("Sessions", systemImage: "text.bubble")
                 }
-                .disabled(store.instances.isEmpty)
+                .disabled(store.visibleInstances.isEmpty)
 
                 Button {
                     store.selectConfigurationForImport()
