@@ -105,7 +105,7 @@ extension CodexInstance {
         CodexInstance(
             id: originalID,
             kind: .original,
-            name: "Codex Original",
+            name: "Codex",
             codexHome: homeDirectory.appendingPathComponent(".codex", isDirectory: true).path,
             bundleStatus: .ready,
             createdAt: Date(timeIntervalSince1970: 0)

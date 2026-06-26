@@ -26,7 +26,7 @@ final class CodexInstanceTests: XCTestCase {
 
         XCTAssertEqual(instance.id, CodexInstance.originalID)
         XCTAssertEqual(instance.kind, .original)
-        XCTAssertEqual(instance.name, "Codex Original")
+        XCTAssertEqual(instance.name, "Codex")
         XCTAssertEqual(instance.codexHome, "/tmp/test-home/.codex")
         XCTAssertTrue(instance.isOriginal)
         XCTAssertFalse(instance.isEditable)
