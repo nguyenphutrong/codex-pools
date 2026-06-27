@@ -1,27 +1,27 @@
 import Foundation
 
-struct CodexInstance: Identifiable, Codable, Equatable {
-    enum BundleStatus: String, Codable, Equatable {
+public struct CodexInstance: Identifiable, Codable, Equatable {
+    public enum BundleStatus: String, Codable, Equatable {
         case ready
         case needsRebuild
         case missingSourceApp
     }
 
-    var id: UUID
-    var name: String
-    var iconPath: String?
-    var codexHome: String
-    var bundleStatus: BundleStatus
-    var bundleShortVersion: String?
-    var bundleBuildVersion: String?
-    var sourceShortVersion: String?
-    var sourceBuildVersion: String?
-    var extraEnvVars: [String: String]
-    var launchArgs: [String]
-    var createdAt: Date
-    var lastLaunchedAt: Date?
+    public var id: UUID
+    public var name: String
+    public var iconPath: String?
+    public var codexHome: String
+    public var bundleStatus: BundleStatus
+    public var bundleShortVersion: String?
+    public var bundleBuildVersion: String?
+    public var sourceShortVersion: String?
+    public var sourceBuildVersion: String?
+    public var extraEnvVars: [String: String]
+    public var launchArgs: [String]
+    public var createdAt: Date
+    public var lastLaunchedAt: Date?
 
-    init(
+    public init(
         id: UUID = UUID(),
         name: String,
         iconPath: String? = nil,
@@ -69,7 +69,7 @@ extension CodexInstance {
         case lastLaunchedAt
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
@@ -86,7 +86,7 @@ extension CodexInstance {
         lastLaunchedAt = try container.decodeIfPresent(Date.self, forKey: .lastLaunchedAt)
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
@@ -104,7 +104,7 @@ extension CodexInstance {
     }
 }
 
-extension CodexInstance {
+public extension CodexInstance {
     static func defaultHomePath(for name: String) -> String {
         InstanceNaming.defaultHomePath(
             for: name,

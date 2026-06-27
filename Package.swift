@@ -8,15 +8,25 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "CodexPools", targets: ["CodexPools"])
+        .library(name: "CodexPoolsCore", targets: ["CodexPoolsCore"]),
+        .executable(name: "CodexPools", targets: ["CodexPools"]),
+        .executable(name: "codex-pools", targets: ["codex-pools"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0")
     ],
     targets: [
+        .target(
+            name: "CodexPoolsCore",
+            path: "CodexPoolsCore",
+            linkerSettings: [
+                .linkedFramework("AppKit")
+            ]
+        ),
         .executableTarget(
             name: "CodexPools",
             dependencies: [
+                "CodexPoolsCore",
                 .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "CodexManager",
@@ -29,9 +39,14 @@ let package = Package(
                 .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
         ),
+        .executableTarget(
+            name: "codex-pools",
+            dependencies: ["CodexPoolsCore"],
+            path: "CodexPoolsCLI"
+        ),
         .testTarget(
             name: "CodexPoolsTests",
-            dependencies: ["CodexPools"]
+            dependencies: ["CodexPoolsCore"]
         )
     ]
 )

@@ -1,7 +1,7 @@
 import Foundation
 
-enum InstanceNaming {
-    static func defaultHomePath(for name: String, homeDirectory: URL) -> String {
+public enum InstanceNaming {
+    public static func defaultHomePath(for name: String, homeDirectory: URL) -> String {
         let slug = name
             .lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
@@ -15,7 +15,7 @@ enum InstanceNaming {
             .path
     }
 
-    static func nextAvailableName(prefix: String, existingNames: Set<String>) -> String {
+    public static func nextAvailableName(prefix: String, existingNames: Set<String>) -> String {
         if !existingNames.contains(prefix) {
             return prefix
         }

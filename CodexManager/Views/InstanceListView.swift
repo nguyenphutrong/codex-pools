@@ -1,4 +1,5 @@
 import AppKit
+import CodexPoolsCore
 import SwiftUI
 
 struct InstanceListView: View {

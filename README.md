@@ -65,8 +65,12 @@ Custom icons are copied into:
 Managed Codex app bundles are created under:
 
 ```text
-~/Library/Application Support/Codex Pools/Apps
+~/Applications/Codex Pools
 ```
+
+This keeps managed instances in a user application location that Launch Services
+and Spotlight can discover more reliably than app bundles buried in Application
+Support.
 
 Launching an instance uses `NSWorkspace.OpenConfiguration` with an injected
 environment:
@@ -95,6 +99,34 @@ Download the DMG or ZIP from the latest GitHub Release.
 > ```bash
 > xattr -cr "/Applications/Codex Pools.app"
 > ```
+
+Drag `Codex Pools.app` into `/Applications` or `~/Applications` so the manager
+itself is available from Spotlight.
+
+Managed Codex instances are installed under `~/Applications/Codex Pools` when
+you launch or choose `Install/Rebuild App`. Use `Reveal App` to open the bundle
+in Finder if Spotlight has not indexed it yet.
+
+### CLI
+
+Release builds include an optional `codex-pools-*-macos` binary. Install it by
+renaming it to `codex-pools` and placing it on your `PATH`, for example:
+
+```bash
+mkdir -p ~/.local/bin
+mv codex-pools-*-macos ~/.local/bin/codex-pools
+chmod +x ~/.local/bin/codex-pools
+```
+
+Available commands:
+
+```bash
+codex-pools list
+codex-pools launch <name-or-id>
+codex-pools reveal <name-or-id>
+codex-pools rebuild <name-or-id>
+codex-pools path <name-or-id>
+```
 
 ## CI/CD
 

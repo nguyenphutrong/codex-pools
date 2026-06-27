@@ -1,13 +1,14 @@
 import AppKit
 import Foundation
 
-struct LaunchService {
-    private let bundleCloneService = BundleCloneService()
+public struct LaunchService {
+    private let bundleCloneService: BundleCloneService
     private let fileManager: FileManager
     private let userDataRootURL: URL
 
-    init(fileManager: FileManager = .default) {
+    public init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
+        self.bundleCloneService = BundleCloneService(fileManager: fileManager)
 
         self.userDataRootURL = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Library")
@@ -16,7 +17,7 @@ struct LaunchService {
             .appendingPathComponent("User Data", isDirectory: true)
     }
 
-    func launch(instance: CodexInstance) async throws {
+    public func launch(instance: CodexInstance) async throws {
         let homePath = NSString(string: instance.codexHome).expandingTildeInPath
         let userDataURL = userDataDirectoryURL(for: instance)
         let appURL = try bundleCloneService.prepareBundle(for: instance)
@@ -58,16 +59,35 @@ struct LaunchService {
         }
     }
 
-    func removeManagedBundle(for instance: CodexInstance) throws {
+    public func removeManagedBundle(for instance: CodexInstance) throws {
         try bundleCloneService.removeBundle(for: instance)
         try removeManagedUserData(for: instance)
     }
 
-    func bundleDetails(for instance: CodexInstance) -> BundleCloneService.BundleDetails {
+    public func bundleDetails(for instance: CodexInstance) -> BundleCloneService.BundleDetails {
         bundleCloneService.bundleDetails(for: instance)
     }
 
-    func quit(instance: CodexInstance) throws {
+    public func managedBundleURL(for instance: CodexInstance) -> URL {
+        bundleCloneService.bundleURL(for: instance)
+    }
+
+    @discardableResult
+    public func prepareBundle(for instance: CodexInstance) throws -> URL {
+        try bundleCloneService.prepareBundle(for: instance)
+    }
+
+    @discardableResult
+    public func rebuildBundle(for instance: CodexInstance) throws -> URL {
+        try bundleCloneService.rebuildBundle(for: instance)
+    }
+
+    public func revealBundle(for instance: CodexInstance) throws {
+        let appURL = try bundleCloneService.prepareBundle(for: instance)
+        NSWorkspace.shared.activateFileViewerSelecting([appURL])
+    }
+
+    public func quit(instance: CodexInstance) throws {
         let runningApplications = NSWorkspace.shared.runningApplications.filter {
             $0.bundleIdentifier == instance.managedBundleIdentifier
         }

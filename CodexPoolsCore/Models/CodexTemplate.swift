@@ -1,14 +1,14 @@
 import Foundation
 
-struct CodexTemplate: Identifiable, Codable, Equatable {
-    var id: UUID
-    var name: String
-    var iconName: String?
-    var homePathSuffix: String
-    var extraEnvVars: [String: String]
-    var launchFlags: [String]
+public struct CodexTemplate: Identifiable, Codable, Equatable {
+    public var id: UUID
+    public var name: String
+    public var iconName: String?
+    public var homePathSuffix: String
+    public var extraEnvVars: [String: String]
+    public var launchFlags: [String]
 
-    init(
+    public init(
         id: UUID = UUID(),
         name: String,
         iconName: String? = nil,
@@ -25,7 +25,7 @@ struct CodexTemplate: Identifiable, Codable, Equatable {
     }
 }
 
-extension CodexTemplate {
+public extension CodexTemplate {
     var safeHomePathSuffix: String {
         let slug = homePathSuffix
             .lowercased()

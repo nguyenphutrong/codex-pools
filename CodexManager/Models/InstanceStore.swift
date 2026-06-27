@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CodexPoolsCore
 import Foundation
 
 @MainActor
@@ -21,8 +22,8 @@ final class InstanceStore: ObservableObject {
     private let exportService = ExportService()
     private let importService = ImportService()
     private let launchService = LaunchService()
+    private let instanceConfiguration: InstanceConfiguration
     private let fileManager: FileManager
-    private let configURL: URL
     private let templatesURL: URL
     private let iconDirectoryURL: URL
     private var runningAppsCancellable: AnyCancellable?
@@ -34,12 +35,9 @@ final class InstanceStore: ObservableObject {
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
+        self.instanceConfiguration = InstanceConfiguration(fileManager: fileManager)
 
         let home = fileManager.homeDirectoryForCurrentUser
-        self.configURL = home
-            .appendingPathComponent(".config")
-            .appendingPathComponent("codex-pools")
-            .appendingPathComponent("instances.json")
         self.templatesURL = home
             .appendingPathComponent(".config")
             .appendingPathComponent("codex-pools")
@@ -59,13 +57,7 @@ final class InstanceStore: ObservableObject {
 
     func load() {
         do {
-            guard fileManager.fileExists(atPath: configURL.path) else {
-                instances = []
-                return
-            }
-
-            let data = try Data(contentsOf: configURL)
-            instances = try JSONDecoder.instanceDecoder.decode([CodexInstance].self, from: data)
+            instances = try instanceConfiguration.loadInstances()
             refreshRunningInstances()
 
             if selectedInstanceID == nil {
@@ -246,6 +238,32 @@ final class InstanceStore: ObservableObject {
         await launch(instance)
     }
 
+    func prepareManagedBundle(_ instance: CodexInstance) {
+        do {
+            var updated = instance
+            _ = try launchService.rebuildBundle(for: updated)
+            refreshBundleDetails(for: &updated)
+            update(updated)
+        } catch {
+            errorMessage = "Could not prepare app bundle: \(error.localizedDescription)"
+            refreshBundleStatuses()
+        }
+    }
+
+    func revealManagedBundle(_ instance: CodexInstance) {
+        do {
+            try launchService.revealBundle(for: instance)
+        } catch {
+            errorMessage = "Could not reveal app bundle: \(error.localizedDescription)"
+            refreshBundleStatuses()
+        }
+    }
+
+    func copyCLICommand(_ instance: CodexInstance) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("codex-pools launch \(instance.id.uuidString)", forType: .string)
+    }
+
     func isLaunching(_ instance: CodexInstance) -> Bool {
         launchingInstanceIDs.contains(instance.id)
     }
@@ -348,13 +366,7 @@ final class InstanceStore: ObservableObject {
 
     private func save() {
         do {
-            try fileManager.createDirectory(
-                at: configURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-
-            let data = try JSONEncoder.instanceEncoder.encode(instances)
-            try data.write(to: configURL, options: .atomic)
+            try instanceConfiguration.saveInstances(instances)
         } catch {
             errorMessage = "Could not save instances: \(error.localizedDescription)"
         }
@@ -415,4 +427,5 @@ final class InstanceStore: ObservableObject {
 
         instances = mergedInstances
     }
+
 }

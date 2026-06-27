@@ -1,3 +1,4 @@
+import CodexPoolsCore
 import SwiftUI
 
 struct InstanceDetailView: View {
@@ -69,65 +70,94 @@ struct InstanceDetailView: View {
             }
 
             Section {
-                HStack {
-                    Button {
-                        Task { await store.launch(draft) }
-                    } label: {
-                        if isLaunching {
-                            HStack(spacing: 6) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Launching")
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Button {
+                            Task { await store.launch(draft) }
+                        } label: {
+                            if isLaunching {
+                                HStack(spacing: 6) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Launching")
+                                }
+                            } else {
+                                Label("Launch", systemImage: "play.fill")
                             }
-                        } else {
-                            Label("Launch", systemImage: "play.fill")
                         }
-                    }
-                    .liquidGlassButtonStyle(.prominent)
-                    .keyboardShortcut(.return, modifiers: [.command])
-                    .disabled(!canSave || isLaunching)
+                        .liquidGlassButtonStyle(.prominent)
+                        .keyboardShortcut(.return, modifiers: [.command])
+                        .disabled(!canSave || isLaunching)
 
-                    Button {
-                        store.quit(draft)
-                    } label: {
-                        Label("Quit", systemImage: "stop.fill")
-                    }
-                    .liquidGlassButtonStyle()
-                    .disabled(!isRunning || isLaunching)
+                        Button {
+                            store.quit(draft)
+                        } label: {
+                            Label("Quit", systemImage: "stop.fill")
+                        }
+                        .liquidGlassButtonStyle()
+                        .disabled(!isRunning || isLaunching)
 
-                    Button {
-                        Task { await store.restart(draft) }
-                    } label: {
-                        Label("Restart", systemImage: "arrow.clockwise")
-                    }
-                    .liquidGlassButtonStyle()
-                    .disabled(!isRunning || !canSave || isLaunching)
+                        Button {
+                            Task { await store.restart(draft) }
+                        } label: {
+                            Label("Restart", systemImage: "arrow.clockwise")
+                        }
+                        .liquidGlassButtonStyle()
+                        .disabled(!isRunning || !canSave || isLaunching)
 
-                    Button {
-                        store.update(draft)
-                    } label: {
-                        Label("Save", systemImage: "checkmark")
-                    }
-                    .liquidGlassButtonStyle()
-                    .keyboardShortcut("s", modifiers: [.command])
-                    .disabled(!canSave || isLaunching)
+                        Button {
+                            store.update(draft)
+                        } label: {
+                            Label("Save", systemImage: "checkmark")
+                        }
+                        .liquidGlassButtonStyle()
+                        .keyboardShortcut("s", modifiers: [.command])
+                        .disabled(!canSave || isLaunching)
 
-                    Button {
-                        duplicateName = "\(draft.name) Copy"
-                        isShowingDuplicateSheet = true
-                    } label: {
-                        Label("Duplicate", systemImage: "plus.square.on.square")
+                        Spacer()
                     }
-                    .liquidGlassButtonStyle()
 
-                    Spacer()
+                    HStack {
+                        Button {
+                            store.prepareManagedBundle(draft)
+                        } label: {
+                            Label("Install/Rebuild App", systemImage: "hammer")
+                        }
+                        .liquidGlassButtonStyle()
+                        .disabled(!canSave || isLaunching || isRunning)
 
-                    Button(role: .destructive) {
-                        isShowingDeleteDialog = true
-                    } label: {
-                        Label("Delete", systemImage: "trash")
+                        Button {
+                            store.revealManagedBundle(draft)
+                        } label: {
+                            Label("Reveal App", systemImage: "folder")
+                        }
+                        .liquidGlassButtonStyle()
+                        .disabled(!canSave || isLaunching)
+
+                        Button {
+                            store.copyCLICommand(draft)
+                        } label: {
+                            Label("Copy CLI Command", systemImage: "terminal")
+                        }
+                        .liquidGlassButtonStyle()
+
+                        Button {
+                            duplicateName = "\(draft.name) Copy"
+                            isShowingDuplicateSheet = true
+                        } label: {
+                            Label("Duplicate", systemImage: "plus.square.on.square")
+                        }
+                        .liquidGlassButtonStyle()
+
+                        Spacer()
+
+                        Button(role: .destructive) {
+                            isShowingDeleteDialog = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .liquidGlassButtonStyle()
                     }
-                    .liquidGlassButtonStyle()
                 }
                 .padding(10)
                 .liquidGlassPanel(cornerRadius: 14)

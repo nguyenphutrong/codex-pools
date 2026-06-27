@@ -2,31 +2,29 @@ import AppKit
 import Darwin
 import Foundation
 
-struct BundleCloneService {
-    struct BundleDetails {
-        let status: CodexInstance.BundleStatus
-        let cloneShortVersion: String?
-        let cloneBuildVersion: String?
-        let sourceShortVersion: String?
-        let sourceBuildVersion: String?
+public struct BundleCloneService {
+    public struct BundleDetails {
+        public let status: CodexInstance.BundleStatus
+        public let cloneShortVersion: String?
+        public let cloneBuildVersion: String?
+        public let sourceShortVersion: String?
+        public let sourceBuildVersion: String?
     }
 
     private let sourceAppURL = URL(fileURLWithPath: "/Applications/Codex.app", isDirectory: true)
     private let fileManager: FileManager
     private let appsRootURL: URL
 
-    init(fileManager: FileManager = .default) {
+    public init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
 
         let home = fileManager.homeDirectoryForCurrentUser
         self.appsRootURL = home
-            .appendingPathComponent("Library")
-            .appendingPathComponent("Application Support")
+            .appendingPathComponent("Applications")
             .appendingPathComponent("Codex Pools")
-            .appendingPathComponent("Apps", isDirectory: true)
     }
 
-    func prepareBundle(for instance: CodexInstance) throws -> URL {
+    public func prepareBundle(for instance: CodexInstance) throws -> URL {
         try preflightRootUser()
         try preflightSourceApp()
         try preflightTools(iconPath: instance.iconPath)
@@ -90,7 +88,7 @@ struct BundleCloneService {
         return destinationURL
     }
 
-    func bundleDetails(for instance: CodexInstance) -> BundleDetails {
+    public func bundleDetails(for instance: CodexInstance) -> BundleDetails {
         let destinationURL = bundleURL(for: instance)
         let cloneVersion = versionInfo(for: destinationURL)
 
@@ -136,13 +134,23 @@ struct BundleCloneService {
         }
     }
 
-    func removeBundle(for instance: CodexInstance) throws {
+    public func removeBundle(for instance: CodexInstance) throws {
         try removeItemIfPresent(at: instanceDirectoryURL(for: instance))
+        try removeItemIfPresent(at: legacyInstanceDirectoryURL(for: instance))
     }
 
-    func bundleURL(for instance: CodexInstance) -> URL {
+    public func bundleURL(for instance: CodexInstance) -> URL {
         instanceDirectoryURL(for: instance)
             .appendingPathComponent(instance.managedAppBundleName, isDirectory: true)
+    }
+
+    public func rebuildBundle(for instance: CodexInstance) throws -> URL {
+        if isRunning(bundleIdentifier: instance.managedBundleIdentifier) {
+            throw BundleCloneError.instanceMustQuitBeforeRebuild(instance.managedAppName)
+        }
+
+        try removeItemIfPresent(at: instanceDirectoryURL(for: instance))
+        return try prepareBundle(for: instance)
     }
 
     private func needsRebuild(
@@ -630,6 +638,15 @@ struct BundleCloneService {
 
     private func instanceDirectoryURL(for instance: CodexInstance) -> URL {
         appsRootURL.appendingPathComponent(instance.id.uuidString, isDirectory: true)
+    }
+
+    private func legacyInstanceDirectoryURL(for instance: CodexInstance) -> URL {
+        fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library")
+            .appendingPathComponent("Application Support")
+            .appendingPathComponent("Codex Pools")
+            .appendingPathComponent("Apps", isDirectory: true)
+            .appendingPathComponent(instance.id.uuidString, isDirectory: true)
     }
 
     private func stagingDirectoryURL(for instance: CodexInstance) -> URL {

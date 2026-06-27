@@ -1,6 +1,6 @@
 import Foundation
 
-extension JSONDecoder {
+public extension JSONDecoder {
     static var instanceDecoder: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -8,7 +8,7 @@ extension JSONDecoder {
     }
 }
 
-extension JSONEncoder {
+public extension JSONEncoder {
     static var instanceEncoder: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

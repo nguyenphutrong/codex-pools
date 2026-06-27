@@ -72,8 +72,10 @@ jobs:
           version="${{ steps.version.outputs.value }}"
           zip_artifact="CodexPools-${version}.zip"
           dmg_artifact="CodexPools-${version}.dmg"
+          cli_artifact="codex-pools-${version}-macos"
 
           ditto -c -k --keepParent "dist/Codex Pools.app" "$zip_artifact"
+          cp "dist/codex-pools" "$cli_artifact"
 
           rm -rf dmg-root
           mkdir -p dmg-root
@@ -86,7 +88,7 @@ jobs:
             -format UDZO \
             "$dmg_artifact"
 
-          shasum -a 256 "$dmg_artifact" "$zip_artifact" > SHA256SUMS.txt
+          shasum -a 256 "$dmg_artifact" "$zip_artifact" "$cli_artifact" > SHA256SUMS.txt
 
       - name: Generate Sparkle appcast
         env:
@@ -120,6 +122,7 @@ jobs:
           ## Installation
 
           Download the DMG or ZIP below.
+          The `codex-pools-*-macos` binary is the optional CLI.
 
           > ⚠️ **Note**: The app is not signed with an Apple Developer certificate. If macOS blocks the app, run:
           > ```bash
@@ -136,10 +139,12 @@ jobs:
           version="${{ steps.version.outputs.value }}"
           zip_artifact="CodexPools-${version}.zip"
           dmg_artifact="CodexPools-${version}.dmg"
+          cli_artifact="codex-pools-${version}-macos"
 
           gh release create "$version" \
             "$dmg_artifact" \
             "$zip_artifact" \
+            "$cli_artifact" \
             SHA256SUMS.txt \
             --title "Codex Pools $version" \
             --notes-file release-notes.md
