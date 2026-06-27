@@ -78,6 +78,19 @@ struct CodexPoolsApp: App {
                         Task { await store.restart(selected) }
                     }
                     .disabled(!store.isRunning(selected))
+
+                    Button("Install/Rebuild App") {
+                        store.prepareManagedBundle(selected)
+                    }
+                    .disabled(store.isRunning(selected))
+
+                    Button("Reveal App") {
+                        store.revealManagedBundle(selected)
+                    }
+
+                    Button("Copy CLI Command") {
+                        store.copyCLICommand(selected)
+                    }
                 }
             }
 

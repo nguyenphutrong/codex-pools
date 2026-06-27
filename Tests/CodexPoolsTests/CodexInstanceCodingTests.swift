@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import CodexPools
+@testable import CodexPoolsCore
 
 final class CodexInstanceCodingTests: XCTestCase {
     func testRoundTripsFullyPopulatedInstance() throws {

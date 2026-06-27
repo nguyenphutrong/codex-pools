@@ -1,5 +1,5 @@
 import XCTest
-@testable import CodexPools
+@testable import CodexPoolsCore
 
 final class InstanceNamingTests: XCTestCase {
     func testNextAvailableNameReturnsPrefixWhenUnused() {

@@ -2,32 +2,37 @@ import AppKit
 import Darwin
 import Foundation
 
-struct BundleCloneService {
-    struct BundleDetails {
-        let status: CodexInstance.BundleStatus
-        let cloneShortVersion: String?
-        let cloneBuildVersion: String?
-        let sourceShortVersion: String?
-        let sourceBuildVersion: String?
+public struct BundleCloneService {
+    public struct BundleDetails {
+        public let status: CodexInstance.BundleStatus
+        public let cloneShortVersion: String?
+        public let cloneBuildVersion: String?
+        public let sourceShortVersion: String?
+        public let sourceBuildVersion: String?
     }
 
     private let sourceAppURL = URL(fileURLWithPath: "/Applications/Codex.app", isDirectory: true)
     private let fileManager: FileManager
     private let appsRootURL: URL
+    private let legacyAppsRootURL: URL
 
-    init(fileManager: FileManager = .default) {
+    public init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
 
         let home = fileManager.homeDirectoryForCurrentUser
         self.appsRootURL = home
+            .appendingPathComponent("Applications")
+            .appendingPathComponent("Codex Pools")
+        self.legacyAppsRootURL = home
             .appendingPathComponent("Library")
             .appendingPathComponent("Application Support")
             .appendingPathComponent("Codex Pools")
             .appendingPathComponent("Apps", isDirectory: true)
     }
 
-    func prepareBundle(for instance: CodexInstance) throws -> URL {
+    public func prepareBundle(for instance: CodexInstance) throws -> URL {
         try preflightRootUser()
+        try migrateLegacyBundleIfNeeded(for: instance)
         try preflightSourceApp()
         try preflightTools(iconPath: instance.iconPath)
 
@@ -85,12 +90,15 @@ struct BundleCloneService {
         try verifyBundle(at: stagingBundleURL)
         try replacePreparedBundle(at: stagingDirectoryURL, for: instance)
         refreshLaunchServicesRegistration(at: destinationURL)
+        try removeLegacyBundleIfSafe(for: instance)
         shouldCleanStaging = false
 
         return destinationURL
     }
 
-    func bundleDetails(for instance: CodexInstance) -> BundleDetails {
+    public func bundleDetails(for instance: CodexInstance) -> BundleDetails {
+        try? migrateLegacyBundleIfNeeded(for: instance)
+
         let destinationURL = bundleURL(for: instance)
         let cloneVersion = versionInfo(for: destinationURL)
 
@@ -136,13 +144,24 @@ struct BundleCloneService {
         }
     }
 
-    func removeBundle(for instance: CodexInstance) throws {
+    public func removeBundle(for instance: CodexInstance) throws {
         try removeItemIfPresent(at: instanceDirectoryURL(for: instance))
+        try removeItemIfPresent(at: legacyInstanceDirectoryURL(for: instance))
     }
 
-    func bundleURL(for instance: CodexInstance) -> URL {
+    public func bundleURL(for instance: CodexInstance) -> URL {
         instanceDirectoryURL(for: instance)
             .appendingPathComponent(instance.managedAppBundleName, isDirectory: true)
+    }
+
+    public func rebuildBundle(for instance: CodexInstance) throws -> URL {
+        if isRunning(bundleIdentifier: instance.managedBundleIdentifier) {
+            throw BundleCloneError.instanceMustQuitBeforeRebuild(instance.managedAppName)
+        }
+
+        try removeItemIfPresent(at: instanceDirectoryURL(for: instance))
+        try removeItemIfPresent(at: legacyInstanceDirectoryURL(for: instance))
+        return try prepareBundle(for: instance)
     }
 
     private func needsRebuild(
@@ -590,6 +609,62 @@ struct BundleCloneService {
         }
     }
 
+    private func migrateLegacyBundleIfNeeded(for instance: CodexInstance) throws {
+        let finalDirectoryURL = instanceDirectoryURL(for: instance)
+        let legacyDirectoryURL = legacyInstanceDirectoryURL(for: instance)
+
+        guard fileManager.fileExists(atPath: legacyDirectoryURL.path) else { return }
+
+        if fileManager.fileExists(atPath: finalDirectoryURL.path) {
+            try removeLegacyBundleIfSafe(for: instance)
+            return
+        }
+
+        if isRunning(bundleIdentifier: instance.managedBundleIdentifier) {
+            throw BundleCloneError.instanceMustQuitBeforeMigration(instance.managedAppName)
+        }
+
+        try preflightWritableDirectory(appsRootURL)
+
+        do {
+            try fileManager.moveItem(at: legacyDirectoryURL, to: finalDirectoryURL)
+            refreshLaunchServicesRegistration(at: bundleURL(for: instance))
+            try removeLegacyRootsIfEmpty()
+        } catch {
+            throw BundleCloneError.migrationFailed(instance.managedAppName, error.localizedDescription)
+        }
+    }
+
+    private func removeLegacyBundleIfSafe(for instance: CodexInstance) throws {
+        let legacyDirectoryURL = legacyInstanceDirectoryURL(for: instance)
+        guard fileManager.fileExists(atPath: legacyDirectoryURL.path) else { return }
+
+        if isRunning(bundleIdentifier: instance.managedBundleIdentifier) {
+            return
+        }
+
+        try removeItemIfPresent(at: legacyDirectoryURL)
+        try removeLegacyRootsIfEmpty()
+    }
+
+    private func removeLegacyRootsIfEmpty() throws {
+        var currentURL = legacyAppsRootURL
+        let stopURL = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library")
+            .appendingPathComponent("Application Support")
+
+        while currentURL.path.hasPrefix(stopURL.path), currentURL != stopURL {
+            guard let contents = try? fileManager.contentsOfDirectory(atPath: currentURL.path),
+                  contents.isEmpty
+            else {
+                return
+            }
+
+            try removeItemIfPresent(at: currentURL)
+            currentURL.deleteLastPathComponent()
+        }
+    }
+
     private func refreshLaunchServicesRegistration(at appURL: URL) {
         let lsregisterURL = URL(fileURLWithPath: "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister")
         try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: appURL.path)
@@ -630,6 +705,11 @@ struct BundleCloneService {
 
     private func instanceDirectoryURL(for instance: CodexInstance) -> URL {
         appsRootURL.appendingPathComponent(instance.id.uuidString, isDirectory: true)
+    }
+
+    private func legacyInstanceDirectoryURL(for instance: CodexInstance) -> URL {
+        legacyAppsRootURL
+            .appendingPathComponent(instance.id.uuidString, isDirectory: true)
     }
 
     private func stagingDirectoryURL(for instance: CodexInstance) -> URL {
@@ -696,6 +776,8 @@ private enum BundleCloneError: LocalizedError {
     case replaceFailed(String, String)
     case commandFailed(String, String)
     case instanceMustQuitBeforeRebuild(String)
+    case instanceMustQuitBeforeMigration(String)
+    case migrationFailed(String, String)
     case runningAsRoot
 
     var errorDescription: String? {
@@ -720,6 +802,10 @@ private enum BundleCloneError: LocalizedError {
             return "\(command) failed. \(output)"
         case .instanceMustQuitBeforeRebuild(let name):
             return "\(name) is running. Quit it before rebuilding its managed app bundle."
+        case .instanceMustQuitBeforeMigration(let name):
+            return "\(name) is running from the legacy app location. Quit it before migrating its managed app bundle."
+        case .migrationFailed(let name, let reason):
+            return "Could not migrate the managed app bundle for \(name). \(reason)"
         case .runningAsRoot:
             return "Do not run Codex Pools as root. Launch it as your normal macOS user so instances stay under your user profile."
         }
