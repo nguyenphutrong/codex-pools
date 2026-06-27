@@ -63,6 +63,7 @@ struct InstanceDetailView: View {
             }
 
             Section("Activity") {
+                LabeledContent("Version", value: draft.detailedBundleVersionSummary)
                 LabeledContent("Created", value: draft.createdAt.formatted(date: .abbreviated, time: .shortened))
                 LabeledContent("Last launched", value: lastLaunchedText)
             }

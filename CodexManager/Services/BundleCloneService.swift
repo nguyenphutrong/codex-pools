@@ -3,6 +3,14 @@ import Darwin
 import Foundation
 
 struct BundleCloneService {
+    struct BundleDetails {
+        let status: CodexInstance.BundleStatus
+        let cloneShortVersion: String?
+        let cloneBuildVersion: String?
+        let sourceShortVersion: String?
+        let sourceBuildVersion: String?
+    }
+
     private let sourceAppURL = URL(fileURLWithPath: "/Applications/Codex.app", isDirectory: true)
     private let fileManager: FileManager
     private let appsRootURL: URL
@@ -82,9 +90,18 @@ struct BundleCloneService {
         return destinationURL
     }
 
-    func bundleStatus(for instance: CodexInstance) -> CodexInstance.BundleStatus {
+    func bundleDetails(for instance: CodexInstance) -> BundleDetails {
+        let destinationURL = bundleURL(for: instance)
+        let cloneVersion = versionInfo(for: destinationURL)
+
         guard fileManager.fileExists(atPath: sourceAppURL.path) else {
-            return .missingSourceApp
+            return BundleDetails(
+                status: .missingSourceApp,
+                cloneShortVersion: cloneVersion.shortVersion,
+                cloneBuildVersion: cloneVersion.buildVersion,
+                sourceShortVersion: nil,
+                sourceBuildVersion: nil
+            )
         }
 
         do {
@@ -93,17 +110,29 @@ struct BundleCloneService {
             let sourceFingerprint = try sourceFingerprint()
             let iconFingerprint = iconFingerprint(for: instance.iconPath)
             let signingIdentity = signingIdentity()
-            let destinationURL = bundleURL(for: instance)
-
-            return needsRebuild(
+            let status: CodexInstance.BundleStatus = needsRebuild(
                 instance: instance,
                 destinationURL: destinationURL,
                 sourceFingerprint: sourceFingerprint,
                 iconFingerprint: iconFingerprint,
                 signingIdentity: signingIdentity
             ) ? .needsRebuild : .ready
+
+            return BundleDetails(
+                status: status,
+                cloneShortVersion: cloneVersion.shortVersion,
+                cloneBuildVersion: cloneVersion.buildVersion,
+                sourceShortVersion: sourceFingerprint.shortVersion,
+                sourceBuildVersion: sourceFingerprint.buildVersion
+            )
         } catch {
-            return .needsRebuild
+            return BundleDetails(
+                status: .needsRebuild,
+                cloneShortVersion: cloneVersion.shortVersion,
+                cloneBuildVersion: cloneVersion.buildVersion,
+                sourceShortVersion: nil,
+                sourceBuildVersion: nil
+            )
         }
     }
 
@@ -137,6 +166,8 @@ struct BundleCloneService {
             info[MetadataKey.sourceExecutableModifiedAt] as? String != sourceFingerprint.executableModifiedAt ||
             info[MetadataKey.iconFingerprint] as? String != iconFingerprint ||
             info[MetadataKey.signingIdentity] as? String != signingIdentity ||
+            info[MetadataKey.managedClone] as? Bool != true ||
+            managedLaunchEnvironment(in: info)["CODEX_SPARKLE_ENABLED"] as? String != "false" ||
             info["CFBundleIdentifier"] as? String != instance.managedBundleIdentifier ||
             info["CFBundleDisplayName"] as? String != instance.managedAppName
     }
@@ -160,7 +191,11 @@ struct BundleCloneService {
         info["CrProductDirName"] = instance.managedBundleIdentifier
         info["SUEnableAutomaticChecks"] = false
         info["SUAllowsAutomaticUpdates"] = false
+        info.removeObject(forKey: "SUFeedURL")
         info.removeObject(forKey: "NSDockTilePlugIn")
+        let launchEnvironment = managedLaunchEnvironment(in: info)
+        launchEnvironment["CODEX_SPARKLE_ENABLED"] = "false"
+        info["LSEnvironment"] = launchEnvironment
 
         if let iconFile = try installIcon(
             from: instance.iconPath,
@@ -179,10 +214,15 @@ struct BundleCloneService {
         info[MetadataKey.sourceExecutableModifiedAt] = sourceFingerprint.executableModifiedAt
         info[MetadataKey.iconFingerprint] = iconFingerprint
         info[MetadataKey.signingIdentity] = signingIdentity
+        info[MetadataKey.managedClone] = true
 
         guard info.write(to: infoURL, atomically: true) else {
             throw BundleCloneError.couldNotWriteInfoPlist(infoURL.path)
         }
+    }
+
+    private func managedLaunchEnvironment(in info: NSDictionary) -> NSMutableDictionary {
+        (info["LSEnvironment"] as? NSDictionary)?.mutableCopy() as? NSMutableDictionary ?? NSMutableDictionary()
     }
 
     private func patchHelperBundleIdentifiers(appURL: URL, bundleIdentifier: String) throws {
@@ -360,6 +400,23 @@ struct BundleCloneService {
             buildVersion: info["CFBundleVersion"] as? String ?? "",
             executableModifiedAt: String(Int(modifiedAt.timeIntervalSince1970))
         )
+    }
+
+    private func versionInfo(for appURL: URL) -> VersionInfo {
+        let infoURL = infoPlistURL(for: appURL)
+        guard let info = NSDictionary(contentsOf: infoURL) else {
+            return VersionInfo(shortVersion: nil, buildVersion: nil)
+        }
+
+        return VersionInfo(
+            shortVersion: cleanVersion(info["CFBundleShortVersionString"] as? String),
+            buildVersion: cleanVersion(info["CFBundleVersion"] as? String)
+        )
+    }
+
+    private func cleanVersion(_ version: String?) -> String? {
+        let trimmed = version?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func iconFingerprint(for iconPath: String?) -> String {
@@ -595,8 +652,13 @@ private struct SourceFingerprint {
     let executableModifiedAt: String
 }
 
+private struct VersionInfo {
+    let shortVersion: String?
+    let buildVersion: String?
+}
+
 private enum CloneMetadata {
-    static let schemaVersion = "4"
+    static let schemaVersion = "5"
     static let sourceBundleIdentifierPrefix = "com.openai.codex"
 }
 
@@ -620,6 +682,7 @@ private enum MetadataKey {
     static let sourceExecutableModifiedAt = "CodexPoolsSourceExecutableModifiedAt"
     static let iconFingerprint = "CodexPoolsIconFingerprint"
     static let signingIdentity = "CodexPoolsSigningIdentity"
+    static let managedClone = "CodexPoolsManagedClone"
 }
 
 private enum BundleCloneError: LocalizedError {
